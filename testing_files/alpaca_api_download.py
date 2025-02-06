@@ -2,8 +2,8 @@ import requests
 import csv
 import os
 
-API_KEY = "PKC4KCAOY052W6OLERUO"
-API_SECRET = "MYkFU3D3xlYNKaxgL80kOuC9MWo9OvEcJHZQX0m4"
+API_KEY = "[KEY]"
+API_SECRET = "[KEY]"
 
 headers = {
     "accept": "application/json",

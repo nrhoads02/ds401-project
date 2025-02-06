@@ -8,8 +8,8 @@ from botocore.client import Config
 s3 = boto3.resource(
     's3',
     endpoint_url='https://files.polygon.io',
-    aws_access_key_id='c8f8d778-1684-4346-ab90-f67354da6716',
-    aws_secret_access_key='riLXUm1qr6KyRzPpfJxpXgAON7peVzLs',
+    aws_access_key_id='[KEY]',
+    aws_secret_access_key='[KEY]',
     config=Config(signature_version='s3v4', s3={'addressing_style': 'path'})
 )
 
