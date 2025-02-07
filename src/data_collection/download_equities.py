@@ -107,7 +107,7 @@ if __name__ == "__main__":
     tickers = sp500_tickers
     timeframe = "5T" 
     start_date = "2024-03-01T09:30:00-04:00" 
-    end_date = "2024-03-01T16:00:00-04:00" 
+    end_date = "2025-02-01T16:00:00-04:00" 
     output_csv = os.path.join("data", "raw", "stocks", "bars.csv")
 
     # Download bars data for all S&P 500 stocks, 5-minute bars, from March 1, 2024 to February 1, 2025.
