@@ -1,4 +1,0 @@
-data/raw/options/.dolt/* filter=lfs diff=lfs merge=lfs -text
-data/raw/stocks/.dolt/* filter=lfs diff=lfs merge=lfs -text
-data/raw/options/.sqlhistory filter=lfs diff=lfs merge=lfs -text
-data/raw/stocks/.sqlhistory filter=lfs diff=lfs merge=lfs -text
