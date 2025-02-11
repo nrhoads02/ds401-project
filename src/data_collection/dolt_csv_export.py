@@ -22,7 +22,7 @@ OUTPUT_DIR = os.path.join('csv')
 # Functions
 def export_table(db_config, table):
     repo_path = os.path.abspath(db_config['path'])
-    output_dir = os.path.join(OUTPUT_DIR, db_config['name'])
+    output_dir = OUTPUT_DIR
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, f"{table}.csv")
     
