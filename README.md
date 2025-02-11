@@ -39,4 +39,6 @@ Follow these steps to set up your local environment:
    ls data/raw/options
    ```
 
-The structure of this data is described further in [data\raw\README.md](data\raw\README.md)
+The structure of this data is described further in [data/raw/README.md](data/raw/README.md)
+
+From here, we will be building csv files through [src/data_collection/dolt_csv_export.py](src/data_collection/dolt_csv_export.py)
