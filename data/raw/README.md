@@ -1,5 +1,6 @@
-Our project's base data is stored in a dolt db. Cloning instructions are in the project's main README.md
+# Raw Data README
 
+Our project's base data is stored in a dolt db. Cloning instructions are in the project's main README.md
 
 ## Stocks
 
@@ -21,7 +22,6 @@ Contains symbol, date, to_factor, for_factor
 
 Contains symbol, date, and amount
 
-
 ## Options
 
 This repository contains two tables:
@@ -34,13 +34,19 @@ Contains date, symbol, expiration, strike price, call/put, bid price, ask price,
 
 Contains date, symbol, historical variance across various time frames, and implied volatilities across various time frames.
 
+## cboe
 
+There are a few assorted CSV files in the ./cboe/ folder, which contain some CBOE volatility indices. These include VIX, VVIX, GVX, and a few others. Information on these can be found here:
 
+<https://www.cboe.com/tradable_products/vix/vix_historical_data/>
+
+## DOLT DB ACCESS
 
 To access a dolt db in the command line, you can follow this process:
 
 1. **Open the SQL Shell:**
    Navigate to your Dolt database directory and start the SQL shell:
+
    ```bash
    cd path/to/dolt/db
    dolt sql
@@ -48,9 +54,7 @@ To access a dolt db in the command line, you can follow this process:
 
 2. **View a Table:**
    In the SQL shell, display table contents (e.g., first 10 rows):
+
    ```sql
    SELECT * FROM table_name LIMIT 10;
    ```
-
-
-
