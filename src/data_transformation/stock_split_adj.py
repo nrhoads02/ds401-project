@@ -1,88 +1,75 @@
 import polars as pl
 
-def calculate_adjustment(row: dict) -> float:
-    """
-    Given a row (as a dict) containing:
-      - 'ex_dates': list of split ex-dates (or None)
-      - 'factors': list of split factors (or None)
-      - 'date': the trading date
-    Returns the cumulative adjustment factor for that row.
-    """
-    ex_dates = row.get("ex_dates")
-    factors = row.get("factors")
-    trade_date = row.get("date")
-    
-    if ex_dates is None or factors is None:
-        return 1.0
-
-    adjustment = 1.0
-    for ex_date, factor in zip(ex_dates, factors):
-        if ex_date > trade_date:
-            adjustment *= factor
-    return adjustment
-
 def adjust_splits(ohlcv: pl.DataFrame) -> pl.DataFrame:
     """
-    Adjusts stock price and volume data in the given ohlcv DataFrame based on splits.
-
+    Correctly adjusts OHLCV data for stock splits using reverse cumulative split factors.
+    
     Parameters:
-        ohlcv (pl.DataFrame): A DataFrame with stock data including 'act_symbol' and 'date' columns.
-                              The 'date' column should already be parsed as a Date.
-
+        ohlcv (pl.DataFrame): DataFrame with columns: act_symbol, date, open, high, low, close, volume
+        
     Returns:
-        pl.DataFrame: The adjusted ohlcv DataFrame with split-adjusted prices and volumes.
+        pl.DataFrame: Properly adjusted OHLCV data with correct pricing and volume
     """
-    # Read the splits data and parse the ex_date
+    # Load and preprocess split data, shifting ex_date by one day
     splits = (
         pl.read_csv("data/raw/stocks/csv/split.csv")
-          .with_columns(pl.col("ex_date").str.to_date("%Y-%m-%d"))
+        .with_columns(
+            pl.col("ex_date").str.to_date("%Y-%m-%d"),
+            pl.when((pl.col("to_factor") == 0) | (pl.col("for_factor") == 0))
+              .then(1.0)
+              .otherwise(pl.col("to_factor") / pl.col("for_factor"))
+              .alias("split_factor")
+        )
+        # Shift the effective ex_date by 1 day so that the factor only applies after the split day.
+        .with_columns(pl.col("ex_date").dt.offset_by("-1d").alias("ex_date"))
+        .filter(pl.col("split_factor") != 1.0)
+        .select(["act_symbol", "ex_date", "split_factor"])
     )
-    
-    # Compute the adjustment factor for each split row
-    splits = splits.with_columns(
-        pl.when((pl.col("to_factor") == 0) | (pl.col("for_factor") == 0))
-          .then(1.0)
-          .otherwise(pl.col("to_factor") / pl.col("for_factor"))
-          .alias("factor")
-    )
-    
-    # Group splits by stock symbol and aggregate the ex_dates and factors
-    splits_grouped = splits.group_by("act_symbol").agg(
-        pl.col("ex_date").sort().alias("ex_dates"),
-        pl.col("factor").sort_by("ex_date").alias("factors")
-    )
-    
-    # Join the splits data onto the ohlcv data based on the stock symbol.
-    ohlcv = ohlcv.join(splits_grouped, on="act_symbol", how="left")
 
-    # Convert the ohlcv DataFrame to a list of dictionaries to calculate adjustments row by row.
-    row_dicts = ohlcv.to_dicts()
-    adjustment_factors = [calculate_adjustment(row) for row in row_dicts]
-    ohlcv = ohlcv.with_columns(pl.Series("adjustment_factor", adjustment_factors))
-    
-    # Adjust the prices and volumes.
-    ohlcv = ohlcv.with_columns([
-        (pl.col("open")  / pl.col("adjustment_factor")).round(2).alias("open"),
-        (pl.col("high")  / pl.col("adjustment_factor")).round(2).alias("high"),
-        (pl.col("low")   / pl.col("adjustment_factor")).round(2).alias("low"),
-        (pl.col("close") / pl.col("adjustment_factor")).round(2).alias("close"),
-        (pl.col("volume") * pl.col("adjustment_factor")).round(0).cast(pl.Int64).alias("volume"),
-    ])
-    
-    # Drop temporary columns used for the adjustment.
-    ohlcv = ohlcv.drop(["ex_dates", "factors", "adjustment_factor"])
-    
-    return ohlcv
+    # Calculate reverse cumulative product of split factors per symbol
+    splits_processed = (
+        splits.sort(["act_symbol", "ex_date"])
+        .group_by("act_symbol", maintain_order=True)
+        .agg(
+            pl.col("ex_date"),
+            pl.col("split_factor")
+              .reverse()
+              .cum_prod()
+              .reverse()
+              .alias("cumulative_factor")
+        )
+        .explode(["ex_date", "cumulative_factor"])
+    )
+
+    # Join splits to OHLCV and calculate adjustments
+    return (
+        ohlcv.sort(["act_symbol", "date"])
+        .join_asof(
+            splits_processed.sort(["act_symbol", "ex_date"]),
+            left_on="date",
+            right_on="ex_date",
+            by="act_symbol",
+            strategy="forward"
+        )
+        .with_columns(
+            pl.coalesce(pl.col("cumulative_factor"), pl.lit(1.0)).alias("adjustment_factor")
+        )
+        .with_columns(
+            (pl.col(["open", "high", "low", "close"]) / pl.col("adjustment_factor")).round(2),
+            (pl.col("volume") * pl.col("adjustment_factor")).round(0).cast(pl.Int64)
+        )
+        .drop(["ex_date", "cumulative_factor", "adjustment_factor"])  # REMOVED split_factor FROM DROP LIST
+        .sort(["date", "act_symbol"])  # Maintain original date ordering
+    )
+
 
 if __name__ == "__main__":
-    # Read the stocks OHLCV CSV and convert the 'date' column to Date type.
-    ohlcv = pl.read_csv("data/raw/stocks/csv/ohlcv.csv")
-    ohlcv = ohlcv.with_columns(
-        pl.col("date").str.to_date("%Y-%m-%d")
+    # Load and process data
+    ohlcv = (
+        pl.read_csv("data/raw/stocks/csv/ohlcv.csv")
+        .with_columns(pl.col("date").str.to_date("%Y-%m-%d"))
     )
     
-    # Adjust the splits using the function.
-    ohlcv_adjusted = adjust_splits(ohlcv)
+    adjusted_ohlcv = adjust_splits(ohlcv)
+    print(adjusted_ohlcv)
     
-    # Print the results
-    print(ohlcv_adjusted)
