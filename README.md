@@ -3,7 +3,7 @@ This repository is the capstone project for Data Science 4010 at Iowa State Univ
 ## Team Members
 - Ryan Freidhoff (RyanFreidhoff)
 - Nic Rhoads (nrhoads02)
-- Dakota Rossi (PCodeXbro)
+- Dakota Rossi (dakota-rossi)
 - Emiliano Saucedo (Emilianosau28)
 
 ## Folders
