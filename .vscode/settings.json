@@ -1,0 +1,4 @@
+{
+    "jupyter.notebookFileRoot": "${workspaceFolder}",
+    "jupyter.workingDirectory": "${workspaceFolder}"
+}

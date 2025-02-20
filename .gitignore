@@ -1,3 +1,4 @@
 .env
 /data/raw/stocks/
 /data/raw/options/
+/src/data_transformation/__pycache__/
