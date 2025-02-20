@@ -2,7 +2,7 @@ import os
 import glob
 import polars as pl
 
-def join_cboe_indexes(stocks_df: pl.DataFrame, cboe_folder: str = "data/raw/cboe") -> pl.DataFrame:
+def join_cboe_indices(stocks_df: pl.DataFrame, cboe_folder: str = "data/raw/cboe") -> pl.DataFrame:
     """
     Joins all cboe index CSVs (with _History.csv in the filename) to the provided stocks DataFrame.
     
@@ -13,8 +13,8 @@ def join_cboe_indexes(stocks_df: pl.DataFrame, cboe_folder: str = "data/raw/cboe
     Returns:
         pl.DataFrame: The stocks DataFrame with additional index columns.
     """
-    # Define indexes that follow the DATE, OPEN, HIGH, LOW, CLOSE format.
-    special_indexes = {"VIX", "VIX9D", "VXAPL", "VXAZN", "VXEEM"}
+    # Define indices that follow the DATE, OPEN, HIGH, LOW, CLOSE format.
+    special_indices = {"VIX", "VIX9D", "VXAPL", "VXAZN", "VXEEM"}
     
     # Get list of all index history CSV files in the folder.
     index_files = glob.glob(os.path.join(cboe_folder, "*_History.csv"))
@@ -33,12 +33,12 @@ def join_cboe_indexes(stocks_df: pl.DataFrame, cboe_folder: str = "data/raw/cboe
             pl.col("DATE").str.strptime(pl.Date, "%m/%d/%Y")
         )
         
-        if index_name in special_indexes:
-            # For indexes with DATE, OPEN, HIGH, LOW, CLOSE, join on the closing price.
+        if index_name in special_indices:
+            # For indices with DATE, OPEN, HIGH, LOW, CLOSE, join on the closing price.
             df = df.rename({"DATE": "date", "CLOSE": index_lower})
             df = df.select(["date", index_lower])
         else:
-            # For indexes with a DATE column and a single data column.
+            # For indices with a DATE column and a single data column.
             cols = df.columns
             if len(cols) < 2:
                 raise ValueError(f"Expected at least 2 columns in {file_path}, got: {cols}")
@@ -59,6 +59,6 @@ if __name__ == "__main__":
         pl.col("date").str.strptime(pl.Date, "%Y-%m-%d")
     )
     
-    stocks_df = join_cboe_indexes(stocks_df, cboe_folder="data/raw/cboe")
+    stocks_df = join_cboe_indices(stocks_df, cboe_folder="data/raw/cboe")
     
     print(stocks_df)

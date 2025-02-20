@@ -14,11 +14,12 @@ def calculate_ema(df: pl.DataFrame, smoothing: float, days: int) -> pl.Series:
     """
     close = df["close"].to_list()
     ema_values = [close[0]]
-    factor = smoothing / (1 + days)
+    factor = smoothing 
     for i in range(1, len(close)):
         prev_ema = ema_values[-1]
         current_close = close[i]
-        ema_values.append(current_close * factor + prev_ema * (1 - factor))
+        ema = current_close * factor + prev_ema * (1 - factor)
+        ema_values.append(ema)
     return pl.Series(ema_values)
 
 def calculate_rsi(df: pl.DataFrame, window: int) -> pl.Series:
@@ -291,34 +292,37 @@ def calculate_pivot_points(df: pl.DataFrame) -> pl.DataFrame:
 
 def add_technical_indicators(df: pl.DataFrame) -> pl.DataFrame:
     """
-    Add a comprehensive set of technical indicators to the OHLCV DataFrame.
-    
-    Parameters:
-        df (pl.DataFrame): Input DataFrame containing at least the columns: date, open, high, low, close, volume.
-        
-    Returns:
-        pl.DataFrame: DataFrame augmented with various technical indicator columns.
+    Add technical indicators with proper sorting and memory management
     """
-    # Log Returns
-    df = df.with_columns(
-        (pl.col("close") / pl.col("close").shift(1)).log().alias("log_returns")
+    # Sort first before grouping
+    df = df.sort(["date", "act_symbol"])
+    
+    # Process groups in eager mode with memory optimization
+    return (
+        df.group_by("act_symbol")
+        .map_groups(lambda group_df: _add_indicators_per_stock(group_df))
+        .sort(["date", "act_symbol"])  # Final sort
     )
 
-    # Simple Moving Averages (SMA)
-    df = df.with_columns([
-        pl.col("close").rolling_mean(window_size=3).alias("SMA_3"),
-        pl.col("close").rolling_mean(window_size=5).alias("SMA_5"),
-        pl.col("close").rolling_mean(window_size=10).alias("SMA_10"),
-        pl.col("close").rolling_mean(window_size=20).alias("SMA_20"),
-    ])
+def _add_indicators_per_stock(df: pl.DataFrame) -> pl.DataFrame:
+    """
+    Optimized version for per-stock processing using native Polars operations
+    """
+    df = df.sort("date")
     
-    # Exponential Moving Averages (EMA)
-    df = df.with_columns([
-        calculate_ema(df, 2, 3).alias("EMA_3"),
-        calculate_ema(df, 2, 5).alias("EMA_5"),
-        calculate_ema(df, 2, 10).alias("EMA_10"),
-        calculate_ema(df, 2, 20).alias("EMA_20"),
-    ])
+    # Use native EMA implementation
+    df = df.with_columns(
+        # Log Returns
+        (pl.col("close") / pl.col("close").shift(1)).log().alias("log_returns"),
+        
+        # SMAs
+        *[pl.col("close").rolling_mean(window_size=n).alias(f"SMA_{n}") 
+          for n in [3, 5, 10, 20]],
+        
+        # EMAs using built-in function
+        *[pl.col("close").ewm_mean(span=n, adjust=False).alias(f"EMA_{n}")
+          for n in [3, 5, 10, 20]],
+    )
     
     # RSI Indicators
     df = df.with_columns([
@@ -370,7 +374,7 @@ def add_technical_indicators(df: pl.DataFrame) -> pl.DataFrame:
         calculate_cmf(df, 100).alias("CMF_100")
     ])
     
-    # Fibonacci Retracement Levels (added as constant columns)
+    # Fibonacci Retracement Levels (computed per stock)
     fib_levels = calculate_fibonacci_retracement(df)
     for col_name, value in fib_levels.items():
         df = df.with_columns(pl.lit(value).alias(col_name))
