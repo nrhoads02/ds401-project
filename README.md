@@ -1,4 +1,4 @@
-This repository is the capstone project for Data Science 4010 at Iowa State University. In this repository we analyze and organize data from Alpha Vantage looking at stock options.
+This repository is the capstone project for Data Science 4010 at Iowa State University. In this repository we analyze and organize data from a Dolt repo with the intention of modeling and visualizing volatility.
 
 ## Team Members
 - Ryan Freidhoff (RyanFreidhoff)
