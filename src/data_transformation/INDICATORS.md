@@ -114,27 +114,6 @@
 
 ---
 
-## 12. Candlestick Patterns  
-**Patterns**:  
-- `Bullish_Engulfing`: Green candle engulfs prior red candle.  
-- `Bearish_Engulfing`: Red candle engulfs prior green candle.  
-- `Doji`: Open ≈ Close (indecision).  
-- `Morning_Star`: Three-candle bullish reversal.  
-**Input**: `open`, `high`, `low`, `close`.  
-**Output**: Boolean series (`True` when pattern detected).  
-
----
-
-## 13. Pivot Points  
-**Levels**:  
-- `Pivot_Point`, `S1`, `R1`, `S2`, `R2`, `S3`, `R3`.  
-**Formula**:  
-  - `Pivot_Point = (High + Low + Close) / 3`.  
-**Input**: `high`, `low`, `close`.  
-**Output**: Support/resistance levels for intraday trading.  
-
----
-
 ## Notes  
 - **Input Data**: All indicators require OHLCV columns (`open`, `high`, `low`, `close`, `volume`).  
 - **Output Types**:  
