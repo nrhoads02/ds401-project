@@ -1,6 +1,6 @@
 # Milestones
 
-## 2025-02-17: Acquire Data 
+## 2025-02-17: Acquire Data Milestone
 
 ### Technology Plan
 
@@ -20,11 +20,11 @@ So far, the team is making good progress towards our end-of-semester goal of hav
 
 As of now, our team is making steady progress toward achieving the end-of-semester goal of delivering a fully functioning dashboard. Although we still have a lot of work left to do we have made big strides in gathering and structuring the data necessary for our needs. However, some obstacles could hinder our ability to meet both weekly and end-of-semester goals. One challenge is determining which models we will need to use to answer different kinds of research questions about the data we are doing the dashboard on. Additionally, the size of the data could be another challenge as it takes time to process certain code due to that fact. To overcome these obstacles, we plan to continue communicating in a problem solving fashion that is being supportive and focused on the goal. We will continue to collaborate closely to address technical challenges early on to ensure the smooth development of the dashboard.
 
-## 2025-02-23: Project Goals
+## 2025-02-23: Project Goals Milestone
 
 ### Exploratory Analysis
 
-We have been using the Polars library of Python for our data analysis, using it to turn our .csv files into dataframes and manipulating them with Python code. We've been making some initial exploratory plots in using MatPlot PyPlot. For our options data, which included the fields we intended to use as response variables, does not have data reported at consistent rates, so we will have to do some manipulation and use only weekly data here. So far, our exploration has involved generating and analyzing different technical indicators to see which ones are useful and which ones are redundant. We are narrowing in on which indicators will be useful for modeling volatility and which we can scrap. We have done some really basic visualizations while working on our exploration, but nothing that will end up in the final dashboard yet.
+We have been using the Polars library of Python for our data analysis, using it to turn our .csv files into dataframes and manipulating them with Python code. We've been making some initial exploratory plots in using MatPlot PyPlot. Our options data, which included the fields we intended to use as response variables, does not have data reported at consistent rates, so we will have to do some manipulation and use only weekly data here. So far, our exploration has involved generating and analyzing different technical indicators to see which ones are useful and which ones are redundant. We are narrowing in on which indicators will be useful for modeling volatility and which we can scrap. We have done some really basic visualizations while working on our exploration, but nothing that will end up in the final dashboard yet.
 
 ### Modeling Plan
 
@@ -32,7 +32,7 @@ For modeling, right now we are focused on doing further exploration of our varia
 
 ### Project Goals
 
-Our target audience includes students, researchers, and investors who are interested in learning about what factors impact stock volatility and in which areas predicting volatility can be important for pricing derivatives. We will continue to research what kind of models would work best to be used within a dashboard. We haven't started dashboarding yet, but as we implement some naive volatility metrics, we can begin creating different views for our dashboard. We have also been exploring other dashboarding projects out on the internet which involve futures and portfolio management, and gathering ideas on what might be good to implement into our dashboard. Some of the details are subject to change as we complete more research, but overall, the next few weeks will be focused on selecting technical indicators, volatility metrics.
+Our target audience includes students, researchers, and investors who are interested in learning about what factors impact stock volatility and in which areas predicting volatility can be important for pricing derivatives. We will continue to research what kind of models would work best to be used within a dashboard. We haven't started dashboarding yet, but as we implement some naive volatility metrics, we can begin creating different views for our dashboard. We have also been exploring other dashboarding projects out on the internet which involve futures and portfolio management, and gathering ideas on what might be good to implement into our dashboard. Some of the details are subject to change as we complete more research, but overall, the next few weeks will be focused on selecting technical indicators, volatility metrics, and mapping out our modeling procedures.
 
 ### Project Progress
 
