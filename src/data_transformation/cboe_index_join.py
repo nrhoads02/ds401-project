@@ -13,6 +13,8 @@ def join_cboe_indices(stocks_df: pl.DataFrame, cboe_folder: str = "data/raw/cboe
     Returns:
         pl.DataFrame: The stocks DataFrame with additional index columns.
     """
+    print("Joining CBOE indices to stocks DataFrame...")
+
     # Define indices that follow the DATE, OPEN, HIGH, LOW, CLOSE format.
     special_indices = {"VIX", "VIX9D", "VXAPL", "VXAZN", "VXEEM"}
     
@@ -47,9 +49,8 @@ def join_cboe_indices(stocks_df: pl.DataFrame, cboe_folder: str = "data/raw/cboe
         
         # Left join the index data onto the stocks DataFrame on 'date'.
         stocks_df = stocks_df.join(df, on="date", how="left")
-    
-    # Optional: filter stocks_df for dates >= March 16, 2011.
-    stocks_df = stocks_df.filter(pl.col("date") >= pl.date(2011, 3, 16))
+
+    print("CBOE indices joined successfully!")
     return stocks_df
 
 if __name__ == "__main__":
