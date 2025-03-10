@@ -57,3 +57,35 @@ So far, the team has been focused on finalizing features for modeling. We have b
 Our dataset contains time series data for over 2000 equities, including daily open, high, low, and close prices, and volume. This dates back to 2011. The database we get this from also has some information on derivatives and stock splits on the same tickers. We have a second dataset which contains some CBOE volatility metrics, also reported daily since 2011 (some of the metrics are reported earlier as well). Finally, we have a third dataset containing option chain and volatility data for over 2000 equities reported weekly since 2019. One issue that we have found with our data is that some equities have been removed from the market between the dataset's creation and now, while others have been added to the market after the dataset's creation. We will likely have to remove both of these kinds of data, as otherwise we will have lots of 'N/A' values. In terms of important features that we are finding, we have been looking into different volatility metrics, and have found that Yang-Zhang volatility provides results very close to the historical variance data derived from options prices. If we are able to get a volatility metric working well enough, we could simply lag this metric and use it as our response variable, letting us utilize the daily data for training instead of relying on the weekly data for our response variable. We are still exploring volatility metrics and determining if this is really a good idea or not.
 
 [![Chart showing different volatility metrics for AAPL data over 2020](docs/MS20250302EA.png)](docs/MS20250302EA.png)
+
+## 2025-03-09: Brainstorm Dashboard Milestone
+
+### Finalized ETL Pipeline (Team Determined Mini-Milestone)
+
+For our team determined mini-milestone this week, we wanted to finalize and standardize our data processing pipeline such that users could easily load in our data and get it to a 'model-ready' state. For this, we have a series of files in the [src/data_transformation](src/data_transformation) folder. After the initial database setup and extraction, users can collect their ohlcv csv into a Polars dataframe using this command:
+
+```{python}
+ohlcv = pl.read_csv("data/raw/stocks/csv/ohlcv.csv").with_columns(
+    pl.col("date").str.to_date("%Y-%m-%d")
+)
+```
+
+And then apply feature transformations using this command:
+
+```{python}
+ohlcv = src.transformation_pipeline.transformation_pipeline(ohlcv)
+```
+
+It will take around a minute to run. First, it runs the `remove_incomplete_tickers` and `adjust_splits` methods from [src/data_transformation/stock_adjustments.py](src/data_transformation/stock_adjustments.py), then it'll generate technical indicators using `add_technical_indicators` method from [src/data_transformation/technical_indicators.py](src/data_transformation/technical_indicators.py), and finally joins our data with the cboe volatility index csvs using the `join_cboe_indices` method from [src/data_transformation/cboe_index_join.py](src/data_transformation/cboe_index_join.py). This setup is modular, and allows us to add technical indicators or further stock split adjustments as needed while maintaining ease of use for developers.
+
+### Brainstorm Dashboard
+
+We are going to make our dashboard showcase different volatility metrics including our modeled volatility predictions for the various stocks in our dataset. One of our big desires for this dashboard is a high degree of interactivity, where users are able to adjust the graphs contained within to their liking, such as picking specific stocks and date ranges, to make the tool as versatile as possible. We want our users to be able to use our dashboard to model historical volatility and also use it to look a little bit into the future to predict future volatility, as well as showing our modeled historical volatility vs realized historical volatility. We also want to include some other metrics to inspire confidence in our volatility predictions and hopefully show how our models came to their conclusions. From there, we want to be able to provide users with some additional stats that are taken from our volatility predictions, the goal being to give any users of our dashboard an overview of the modeled stocks and any stats or metrics that are of interest to traders, to give them a detailed profile of the selected stocks if so desired.
+
+### Finalize Data Models
+
+Our final models have a few main components. First, we need to use a dimensionality reduction technique like PCA to determine which indicators/attributes would be best to cluster on. From here, we will use some sort of unsupervised learning technique, which then gives us clusters that we will make our final models customized on. From our testing, we aren't entirely sure if this clustering approach will be appropriate, but we still have a few options left to try. Because our data is of a time-series nature and large, we have a few things on our final model wishlist. Ideally, our model will not require normalization of data, allowing us to side-step large amounts of computation time (normalization is harder when we have highly temporal data). Additionally, we would like our model to be equipped with the ability to handle temporal data, either out-of-box or with simple modifications, which is something that not all models can do. We need this model to be efficient with large data and customizable to each cluster, as we would ideally want to build out a separate model for each cluster, but we will test some options that operate on the entire ticker pool as well. We have narrowed down our selection to XGBoost, Transformer Based Models, GRU Models, or some other LSTM model. From earlier research, we have concluded that we will be training our final model using our technical indicators and volatility metrics (both in-house and CBOE) as explanatory variables, with future historical volatility (i.e. historical volatility shifted forward) as the response variable.
+
+### Project Progress
+
+This week, each team member contributed to the implementation and research of different modeling, feature selection, and clustering approaches to decide which options suit our data and our needs the best. Each member has researched and gathered information about different approaches, and we have also been working on some basic implementation of found strategies. Every team member has their tech stack ready on their local machine, but there is still some friction with getting used to version control systems and the new technologies involved. The next steps for the project are to find more dashboard ideas and finalize our modeling approach. So far the team has been communicating well and it seems like everyone is on the same page for next steps. We have been working hard to make sure everyone understands the project and what direction we need to be going in to get our models and dashboard built.
