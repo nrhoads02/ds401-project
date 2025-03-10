@@ -10,6 +10,83 @@ import matplotlib.pyplot as plt
 import xgboost as xgb
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import time
+import pickle
+import os
+import datetime
+
+def save_models(model_results, model_dir="data/models/xgboost"):
+    """
+    Save the paired XGBoost models to a pickle file with timestamp.
+    
+    Parameters:
+    -----------
+    model_results : dict
+        Results dictionary from train_paired_volatility_models
+    model_dir : str
+        Directory to save the model
+        
+    Returns:
+    --------
+    str
+        Path to the saved model file
+    """
+    # Create directory if it doesn't exist
+    os.makedirs(model_dir, exist_ok=True)
+    
+    # Create timestamp for filename
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Create filename
+    filename = f"xgboost_model_{timestamp}.pkl"
+    filepath = os.path.join(model_dir, filename)
+    
+    # Save the model
+    with open(filepath, "wb") as f:
+        pickle.dump(model_results, f)
+    
+    print(f"Models saved to {filepath}")
+    return filepath
+
+def load_models(filepath=None, model_dir="data/models/xgboost"):
+    """
+    Load paired XGBoost models from a pickle file.
+    If no filepath is provided, loads the most recent model.
+    
+    Parameters:
+    -----------
+    filepath : str, optional
+        Path to the specific model file to load
+    model_dir : str
+        Directory where models are stored
+        
+    Returns:
+    --------
+    dict
+        The loaded model results dictionary
+    """
+    # If no filepath provided, find the most recent model
+    if filepath is None:
+        if not os.path.exists(model_dir):
+            raise FileNotFoundError(f"Model directory {model_dir} does not exist")
+        
+        model_files = [
+            os.path.join(model_dir, f) for f in os.listdir(model_dir) 
+            if f.startswith("xgboost_model_") and f.endswith(".pkl")
+        ]
+        
+        if not model_files:
+            raise FileNotFoundError(f"No model files found in {model_dir}")
+        
+        # Sort by modification time, newest first
+        filepath = max(model_files, key=os.path.getmtime)
+        print(f"Loading most recent model: {filepath}")
+    
+    # Load and return the model
+    with open(filepath, "rb") as f:
+        model_results = pickle.load(f)
+    
+    print(f"Model loaded successfully from {filepath}")
+    return model_results
 
 def train_paired_volatility_models(
     df: pl.DataFrame, 
