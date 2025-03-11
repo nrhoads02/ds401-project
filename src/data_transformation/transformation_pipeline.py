@@ -15,6 +15,9 @@ def transformation_pipeline(df: pl.DataFrame) -> pl.DataFrame:
 
     df = cboe_index_join.join_cboe_indices(df)
 
+    print("Dropping rows with null values...")
+    df = df.drop_nulls()
+
     return df
 
 if __name__ == "__main__":
