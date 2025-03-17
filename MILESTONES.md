@@ -89,3 +89,21 @@ Our final models have a few main components. First, we need to use a dimensional
 ### Project Progress
 
 This week, each team member contributed to the implementation and research of different modeling, feature selection, and clustering approaches to decide which options suit our data and our needs the best. Each member has researched and gathered information about different approaches, and we have also been working on some basic implementation of found strategies. Every team member has their tech stack ready on their local machine, but there is still some friction with getting used to version control systems and the new technologies involved. The next steps for the project are to find more dashboard ideas and finalize our modeling approach. So far the team has been communicating well and it seems like everyone is on the same page for next steps. We have been working hard to make sure everyone understands the project and what direction we need to be going in to get our models and dashboard built.
+
+## 2025-03-16: Finalize Data Models Milestone
+
+### Finalize Data Models
+
+We are still working on deciding exactly which data models we will use. We are starting to lean towards NN-based approaches, and have built out code for DeepAR models, while we have in-progress code for TFT and NBEATS approaches. We have already seen better results with DeepAR approaches as opposed to models like XGBoost which don't act on the temporal elements of our data. Utilizing models built for time-series with LSTM layers should give us the best possible results. Since we already have some results for XGBoost and DeepAR models, we can utilize those to build our dashboards and just 'plug in' a different model once we find the best solution. We are also considering trying to use an approach that can predict across multiple different time horizons and even build our an entire volatility surface instead of just one point. 
+
+### Project Progress
+
+This week, we have been focusing on generating dashboard ideas and finalizing our model selection. The team has been split across model research, implementation, dashboard generation, and dashboard research, but we are starting to collect our ideas into a more cohesive plan as we head into break. We have registered our dashboard as a streamlit app and we have been training some models to base our visualizations and predictions off of. We have also slightly shifted our prediction goals and have been doing research on models related to volatility surface predictions as opposed to point volatility predictions.
+
+### Dashboard Sketch
+
+We have started to explore how to best visualize our model results on our dashboard. We are planning to use Streamlit and it's associated Python packages to drive and host our dashboard. We're working on building out the workflow to get our model results and data out and displayed on Streamlit, but have been running into issues with our data size. Since we have very large datasets and models, we can't store the models on GitHub, which is where Streamlit reads our data from. We will have to explore more creative file storage and delivery solutions. Streamlit is a really expansive and powerful dashboarding tool, so we have lots of options for user interaction and visualization choices for our model results. We'd love to do something related to derivative pricing, something related to portfolio management, and/or something related to statistical arbitrage. We're also going to want to have multiple pages on our dashboard, which Streamlit should be able to accommodate. 
+
+### Spring Break Plans
+
+The group has decided to continue working on our project when possible during Spring Break. Discussions were held the day before break to determine which goals we would like to accomplish over break. We want to have a large push towards finalizing the model and beginning the dashboard. Ideally, we will have the model complete and the dashboard began by the end of break. We understand that each team member has different amounts of time they are able to commit, but will do what they can to take advantage of the time before next class period.
