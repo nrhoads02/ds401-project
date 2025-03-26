@@ -34,6 +34,9 @@ def join_cboe_indices(stocks_df: pl.DataFrame, cboe_folder: str = "data/raw/cboe
         df = df.with_columns(
             pl.col("DATE").str.strptime(pl.Date, "%m/%d/%Y")
         )
+
+        # Drop nulls
+        df = df.drop_nulls()
         
         if index_name in special_indices:
             # For indices with DATE, OPEN, HIGH, LOW, CLOSE, join on the closing price.
@@ -47,7 +50,7 @@ def join_cboe_indices(stocks_df: pl.DataFrame, cboe_folder: str = "data/raw/cboe
             df = df.rename({cols[0]: "date", cols[1]: index_lower})
             df = df.select(["date", index_lower])
         
-        # Left join the index data onto the stocks DataFrame on 'date'.
+        # Inner join the index data onto the stocks DataFrame on 'date'.
         stocks_df = stocks_df.join(df, on="date", how="left")
 
     print("CBOE indices joined successfully!")

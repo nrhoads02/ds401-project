@@ -3,8 +3,13 @@ import polars as pl
 def remove_incomplete_tickers(ohlcv: pl.DataFrame) -> pl.DataFrame:
     print("Filtering tickers present on first and last dates, with no nulls in-between...")
 
-    # Get first and last dates
-    first_date, last_date = ohlcv["date"].min(), ohlcv["date"].max()
+    # Get first and last dates - fixing the duplicate column name issue
+    date_info = ohlcv.select(
+        pl.min("date").alias("min_date"), 
+        pl.max("date").alias("max_date")
+    ).row(0)
+    
+    first_date, last_date = date_info[0], date_info[1]
 
     print(f"First date: {first_date}")
     print(f"Last date: {last_date}")
@@ -40,7 +45,6 @@ def remove_incomplete_tickers(ohlcv: pl.DataFrame) -> pl.DataFrame:
         .get_column("act_symbol")
         .to_list()
     )
-
 
     # Remove tickers with nulls
     filtered_df = ohlcv_continuous.filter(~pl.col("act_symbol").is_in(tickers_with_nulls))
@@ -116,10 +120,9 @@ def adjust_splits(ohlcv: pl.DataFrame) -> pl.DataFrame:
             (pl.col(["open", "high", "low", "close"]) / pl.col("adjustment_factor")).round(2),
             (pl.col("volume") * pl.col("adjustment_factor")).round(0).cast(pl.Int64)
         )
-        .drop(["ex_date", "cumulative_factor", "adjustment_factor"])  # REMOVED split_factor FROM DROP LIST
+        .drop(["ex_date", "cumulative_factor", "adjustment_factor"])
         .sort(["date", "act_symbol"])  # Maintain original date ordering
     )
-
 
 if __name__ == "__main__":
     # Load and process data
