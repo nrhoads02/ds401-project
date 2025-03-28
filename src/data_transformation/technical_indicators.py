@@ -753,7 +753,7 @@ def add_technical_indicators(df: pl.LazyFrame, calculate_future_cols: bool = Tru
     # VolTermRatio (term structure steepness)
     # Key term structure pairs
     term_structure_pairs = [
-        (10, 30), (10, 90), (30, 90), (90, 180), (90, 252), (180, 252)
+        (10, 15), (10, 20), (10, 35), (15, 20), (15, 35), (20, 25), (20, 30), (20, 35)
     ]
     
     # Calculate for each pair with proper safeguards
