@@ -73,7 +73,7 @@ nbformat
 nest-asyncio
 networkx
 numba
-numpy
+numpy<=1.26
 opt_einsum
 optree
 packaging
@@ -86,7 +86,7 @@ pillow
 pipreqs
 platformdirs
 plotly
-polars
+polars>=0.19
 polars-ols
 polars_ta
 prompt_toolkit
