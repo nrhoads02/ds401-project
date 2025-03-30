@@ -306,9 +306,9 @@ def main():
             pl_date = pl.date(date.year, date.month, date.day)
             
             # Show loading spinner while processing
-            with st.spinner("Loading and processing data..."):
-                # Load and filter data for the selected stock
-                ohlcv_df = load_data("ohlcv", "AAPL")
+            with st.spinner(f"Loading and processing data for {stock}..."):
+                # Load and filter data for the selected stock (FIX: Use the selected stock, not hardcoded "AAPL")
+                ohlcv_df = load_data("ohlcv", stock)
                 
                 # Apply the transformation pipeline
                 ohlcv_df = transformation_pipeline(ohlcv_df)
