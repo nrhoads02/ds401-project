@@ -11,6 +11,8 @@ import datetime
 
 # Now import should work
 from src.data_transformation.transformation_pipeline import transformation_pipeline
+from src.data_extraction.dataframe_loader import load_data
+
 
 def generate_vol_surface(df, stock, date, show_surface=False):
     """
@@ -306,11 +308,7 @@ def main():
             # Show loading spinner while processing
             with st.spinner("Loading and processing data..."):
                 # Load and filter data for the selected stock
-                ohlcv_df = pl.read_csv("data/raw/stocks/csv/ohlcv.csv").with_columns(
-                    pl.col("date").str.to_date("%Y-%m-%d")
-                ).filter(
-                    pl.col("act_symbol") == stock
-                )
+                ohlcv_df = load_data("ohlcv", "AAPL")
                 
                 # Apply the transformation pipeline
                 ohlcv_df = transformation_pipeline(ohlcv_df)
