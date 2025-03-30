@@ -434,12 +434,6 @@ def add_technical_indicators(df: pl.LazyFrame, calculate_future_cols: bool = Tru
             .alias(f"YZVol_{window}")
         )
 
-        # # Then annualize it properly
-        # df = df.with_columns(
-        #     (pl.col(f"YZVol_{window}") * math.sqrt(252))  # Annualize with trading days factor
-        #     .alias(f"YZVol_{window}")
-        # )
-
         # Calculate forward-looking version if requested
         if calculate_future_cols:
             df = df.with_columns(

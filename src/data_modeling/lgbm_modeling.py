@@ -947,7 +947,7 @@ def predict_for_visualization(
     
     # Ensure we have basic columns for visualization (fill with defaults if needed)
     # All volatility metrics
-    for metric_type in ['YZVol_', 'VolSkew_', 'VolCurvature_', 'MeanReversion_', 'VolOfVol_', 'PriceVolCorr_', 'VolIntensity_']:
+    for metric_type in ['YZVol_', 'VolSkew_', 'VolCurvature_', 'MeanReversion_', 'VolOfVol_', 'PriceVolCorr_', 'VolIntensity_', 'LogPriceRatio_']:
         windows = target_types.get(metric_type, [])
         
         if not windows:
@@ -980,6 +980,8 @@ def predict_for_visualization(
                         viz_data[col_name] = -0.6  # Default negative correlation for equities
                     elif metric_type == 'VolIntensity_':
                         viz_data[col_name] = 0.5  # Default medium intensity
+                    elif metric_type == 'LogPriceRatio_':
+                        viz_data[col_name] = 0.0 # Default log price ratio
     
     # Create DataFrame from the constructed row
     return pl.DataFrame([viz_data])
