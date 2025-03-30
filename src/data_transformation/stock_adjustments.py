@@ -1,4 +1,5 @@
 import polars as pl
+from src.data_extraction.dataframe_loader import load_data
 
 def remove_incomplete_tickers(ohlcv: pl.DataFrame) -> pl.DataFrame:
     print("Filtering tickers present on first and last dates, with no nulls in-between...")
@@ -61,6 +62,7 @@ def remove_incomplete_tickers(ohlcv: pl.DataFrame) -> pl.DataFrame:
 def adjust_splits(ohlcv: pl.DataFrame) -> pl.DataFrame:
     """
     Correctly adjusts OHLCV data for stock splits using reverse cumulative split factors.
+    Uses the partitioned Parquet files.
     
     Parameters:
         ohlcv (pl.DataFrame): DataFrame with columns: act_symbol, date, open, high, low, close, volume
@@ -69,12 +71,11 @@ def adjust_splits(ohlcv: pl.DataFrame) -> pl.DataFrame:
         pl.DataFrame: Properly adjusted OHLCV data with correct pricing and volume
     """
     print("Adjusting OHLCV data for stock splits...")
-
-    # Load and preprocess split data, shifting ex_date by one day
+    
+    # Load only the split data for symbols in our OHLCV data
     splits = (
-        pl.read_csv("data/raw/stocks/csv/split.csv")
+        load_data("split")
         .with_columns(
-            pl.col("ex_date").str.to_date("%Y-%m-%d"),
             pl.when((pl.col("to_factor") == 0) | (pl.col("for_factor") == 0))
               .then(1.0)
               .otherwise(pl.col("to_factor") / pl.col("for_factor"))
@@ -125,12 +126,13 @@ def adjust_splits(ohlcv: pl.DataFrame) -> pl.DataFrame:
     )
 
 if __name__ == "__main__":
-    # Load and process data
-    ohlcv = (
-        pl.read_csv("data/raw/stocks/csv/ohlcv.csv")
-        .with_columns(pl.col("date").str.to_date("%Y-%m-%d"))
-    )
+    # Load OHLCV data from Parquet files
+    ohlcv = load_data("ohlcv")
     
-    adjusted_ohlcv = adjust_splits(ohlcv)
+    # Process and adjust data
+    filtered_ohlcv = remove_incomplete_tickers(ohlcv)
+    adjusted_ohlcv = adjust_splits(filtered_ohlcv)
+    
+    print(f"Final dataset shape: {adjusted_ohlcv.shape}")
+    print(f"Number of symbols: {adjusted_ohlcv['act_symbol'].n_unique()}")
     print(adjusted_ohlcv)
-    
