@@ -10,12 +10,11 @@ import datetime
 import time
 import numpy as np
 import polars as pl
-import matplotlib.pyplot as plt
 import lightgbm as lgb
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from tqdm.auto import tqdm
 import gc
-from typing import Dict, List, Tuple, Optional, Union, Any, Callable, Iterator
+from typing import Dict, List, Union, Any
 import tempfile
 import logging
 

@@ -1,7 +1,7 @@
 from src.data_transformation import stock_adjustments, technical_indicators, cboe_index_join
 import polars as pl
 
-def transformation_pipeline(df: pl.DataFrame) -> pl.DataFrame:
+def transformation_pipeline(df: pl.DataFrame, calculate_future_cols: bool = True) -> pl.DataFrame:
     """
     Transform stock data using Polars' streaming capabilities to minimize memory usage.
     Focuses on optimizing the two main bottlenecks: technical indicator generation and null dropping.
@@ -22,7 +22,7 @@ def transformation_pipeline(df: pl.DataFrame) -> pl.DataFrame:
     print("Adding technical indicators using streaming mode...")
     df = (
         df.lazy()
-        .pipe(technical_indicators.add_technical_indicators)
+        .pipe(technical_indicators.add_technical_indicators, calculate_future_cols=calculate_future_cols)
         # Using streaming=True for this collection to process in chunks
         .collect(streaming=True)
     )

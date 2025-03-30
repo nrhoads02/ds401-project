@@ -376,7 +376,7 @@ def add_technical_indicators(df: pl.LazyFrame, calculate_future_cols: bool = Tru
     
     # --- Step 15: Yang-Zhang Volatility (Using heston_windows) ---
     for window in heston_windows:
-        k = 0.34 / (1 + (window + 1) / (window - 1))
+        k = 0.34 / (1.34 + (window + 1) / (window - 1))
         
         # Calculate open-close and close-open log returns with proper null handling
         df = df.with_columns([
@@ -430,9 +430,15 @@ def add_technical_indicators(df: pl.LazyFrame, calculate_future_cols: bool = Tru
                 .rolling_std(window, min_periods=max(5, window//5))
                 .over("act_symbol")
             )
-            .clip(0.001, 0.5)  # Apply reasonable bounds for volatility
+            .clip(0.001, 1.999)  # Apply reasonable bounds for volatility
             .alias(f"YZVol_{window}")
         )
+
+        # # Then annualize it properly
+        # df = df.with_columns(
+        #     (pl.col(f"YZVol_{window}") * math.sqrt(252))  # Annualize with trading days factor
+        #     .alias(f"YZVol_{window}")
+        # )
 
         # Calculate forward-looking version if requested
         if calculate_future_cols:
@@ -769,8 +775,29 @@ def add_technical_indicators(df: pl.LazyFrame, calculate_future_cols: bool = Tru
             .otherwise(1.0) 
             .alias(ratio_name)
         )
-    
-    # --- Step 25: Clean up intermediate calculation columns ---
+
+    # --- Step 25: Price Ratio ---
+    # Ratio between close now and close at various intervals (heston_windows)
+    for window in heston_windows:
+        # Calculate log price ratio (log(S_t / S_{t-window}))
+        df = df.with_columns(
+            pl.when(
+                (pl.col("close") > 0.00001) & 
+                (pl.col("close").shift(window).over("act_symbol") > 0.00001)
+            )
+            .then((pl.col("close") / pl.col("close").shift(window).over("act_symbol")).log())
+            .otherwise(0.0)
+            .alias(f"LogPriceRatio_{window}")
+        )
+        
+        if calculate_future_cols:
+            # Forward-looking version
+            df = df.with_columns(
+                pl.col(f"LogPriceRatio_{window}").shift(-window).over("act_symbol")
+                .alias(f"LogPriceRatio_{window}_future")
+            )
+        
+    # --- Step 26: Clean up intermediate calculation columns ---
     # Define columns to keep (base columns + final indicator columns)
     base_cols = ["act_symbol", "date", "open", "high", "low", "close", "volume", "log_returns"]
 
@@ -803,7 +830,7 @@ def add_technical_indicators(df: pl.LazyFrame, calculate_future_cols: bool = Tru
             f"Skewness_{window}", f"Kurtosis_{window}", 
             f"VolSkew_{window}", f"VolCurvature_{window}", f"WingRatio_{window}",
             f"MeanReversion_{window}", f"VolOfVol_{window}", f"PriceVolCorr_{window}",
-            f"VolIntensity_{window}"
+            f"VolIntensity_{window}", f"LogPriceRatio_{window}"
         ]
         indicator_cols.extend(base_heston_indicators)
         
@@ -813,7 +840,8 @@ def add_technical_indicators(df: pl.LazyFrame, calculate_future_cols: bool = Tru
                 f"YZVol_{window}_future", f"VolSkew_{window}_future",
                 f"VolCurvature_{window}_future", f"WingRatio_{window}_future",
                 f"MeanReversion_{window}_future", f"VolOfVol_{window}_future",
-                f"PriceVolCorr_{window}_future", f"VolIntensity_{window}_future"
+                f"PriceVolCorr_{window}_future", f"VolIntensity_{window}_future",
+                f"LogPriceRatio_{window}_future" 
             ]
             indicator_cols.extend(future_indicators)
 
