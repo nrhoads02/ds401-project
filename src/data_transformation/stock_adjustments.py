@@ -1,6 +1,91 @@
 import polars as pl
 from src.data_extraction.dataframe_loader import load_data
 
+def remove_duplicates(split_df, max_days=150, verbose=False):
+    """
+    Removes duplicate stock splits in a Polars dataframe, keeping only the most recent occurrence.
+    
+    Args:
+        split_df: Polars DataFrame with columns [act_symbol, ex_date, to_factor, for_factor]
+        max_days: Maximum number of days between potential duplicates (default: 150)
+        verbose: If True, prints information about removed duplicates (default: False)
+        
+    Returns:
+        Polars DataFrame with duplicates removed
+    """
+    # First, find all the duplicate pairs
+    df_a = split_df.select([
+        pl.col("act_symbol"),
+        pl.col("ex_date").alias("first_split_date"),
+        pl.col("to_factor"),
+        pl.col("for_factor")
+    ])
+    
+    df_b = split_df.select([
+        pl.col("act_symbol"),
+        pl.col("ex_date").alias("second_split_date"),
+        pl.col("to_factor").alias("b_to_factor"),
+        pl.col("for_factor").alias("b_for_factor")
+    ])
+    
+    duplicates = df_a.join(
+        df_b,
+        on="act_symbol",
+        how="inner"
+    ).filter(
+        (pl.col("first_split_date") < pl.col("second_split_date")) &
+        ((pl.col("second_split_date") - pl.col("first_split_date")).dt.total_days() <= max_days) &
+        (pl.col("to_factor") == pl.col("b_to_factor")) &
+        (pl.col("for_factor") == pl.col("b_for_factor"))
+    ).select([
+        pl.col("act_symbol"),
+        pl.col("first_split_date"),
+        pl.col("second_split_date"),
+        pl.col("to_factor"),
+        pl.col("for_factor")
+    ])
+    
+    # If no duplicates found, return the original dataframe
+    if len(duplicates) == 0:
+        if verbose:
+            print("No duplicates found.")
+        return split_df
+    
+    # Get a list of rows to keep (only the latest of each duplicate)
+    keep_list = []
+    
+    # For each unique symbol, find all duplicates and keep only the latest one
+    for symbol in duplicates["act_symbol"].unique():
+        # Get all split dates for this symbol
+        symbol_data = split_df.filter(pl.col("act_symbol") == symbol)
+        
+        # Get the duplicate dates to be removed for this symbol
+        symbol_duplicates = duplicates.filter(pl.col("act_symbol") == symbol)
+        remove_dates = symbol_duplicates.select("first_split_date").to_series().to_list()
+        
+        # Keep records that aren't in the removal list
+        symbol_cleaned = symbol_data.filter(~pl.col("ex_date").is_in(remove_dates))
+        keep_list.append(symbol_cleaned)
+        
+    # Handle symbols without duplicates - keep all their records
+    all_dupes_symbols = duplicates["act_symbol"].unique().to_list()
+    non_dupes = split_df.filter(~pl.col("act_symbol").is_in(all_dupes_symbols))
+    keep_list.append(non_dupes)
+    
+    # Combine all the records to keep
+    cleaned_df = pl.concat(keep_list)
+    
+    if verbose:
+        dupe_count = duplicates.group_by("act_symbol").agg(pl.count("first_split_date").alias("duplicates"))
+        print(f"Found {len(duplicates)} duplicate pairs across {len(dupe_count)} symbols")
+        print(dupe_count)
+        
+        removed_count = len(split_df) - len(cleaned_df)
+        print(f"Removed {removed_count} duplicate records, {len(cleaned_df)} records remaining")
+    
+    return cleaned_df
+
+
 def remove_incomplete_tickers(ohlcv: pl.DataFrame) -> pl.DataFrame:
     print("Filtering tickers present on first and last dates, with no nulls in-between...")
 
@@ -59,22 +144,33 @@ def remove_incomplete_tickers(ohlcv: pl.DataFrame) -> pl.DataFrame:
     return filtered_df
 
 
-def adjust_splits(ohlcv: pl.DataFrame) -> pl.DataFrame:
+def adjust_splits(ohlcv: pl.DataFrame, max_duplicate_days=150, verbose=False) -> pl.DataFrame:
     """
     Correctly adjusts OHLCV data for stock splits using reverse cumulative split factors.
-    Uses the partitioned Parquet files.
+    Uses the partitioned Parquet files. Also removes duplicate split records.
     
     Parameters:
         ohlcv (pl.DataFrame): DataFrame with columns: act_symbol, date, open, high, low, close, volume
+        max_duplicate_days (int): Maximum number of days between duplicate splits (default: 150)
+        verbose (bool): Whether to print verbose output (default: True)
         
     Returns:
         pl.DataFrame: Properly adjusted OHLCV data with correct pricing and volume
     """
     print("Adjusting OHLCV data for stock splits...")
     
-    # Load only the split data for symbols in our OHLCV data
+    # Load the split data
+    splits_raw = load_data("split")
+    
+    # Remove duplicate split records
+    if verbose:
+        print("Checking for and removing duplicate split records...")
+    
+    splits_cleaned = remove_duplicates(splits_raw, max_days=max_duplicate_days, verbose=verbose)
+    
+    # Process the cleaned splits data
     splits = (
-        load_data("split")
+        splits_cleaned
         .with_columns(
             pl.when((pl.col("to_factor") == 0) | (pl.col("for_factor") == 0))
               .then(1.0)
