@@ -3,3 +3,4 @@ polars
 scipy
 lightgbm
 scikit-learn
+tqdm
