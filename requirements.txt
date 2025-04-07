@@ -2,3 +2,4 @@ plotly
 polars
 scipy
 lightgbm
+sklearn
