@@ -12,6 +12,7 @@ import datetime
 # Now import should work
 from src.data_transformation.transformation_pipeline import transformation_pipeline
 from src.data_extraction.dataframe_loader import load_data
+from src.data_modeling.lgbm_modeling import load_lgbm_model, predict_for_visualization
 
 
 def generate_vol_surface(df, stock, date, show_surface=False):
@@ -288,6 +289,14 @@ def main():
             help="Choose a date to visualize the volatility surface"
         )
         
+        # Surface type selector
+        surface_type = st.radio(
+            "Surface Type:",
+            options=["Realized", "Predicted", "Both"],
+            index=0,
+            help="Choose which type of volatility surface to display"
+        )
+        
         # Submit button
         submit_button = st.button("Generate Volatility Surface", use_container_width=True)
         
@@ -296,50 +305,133 @@ def main():
         st.markdown("### About")
         st.info(
             "This app visualizes volatility surfaces for stocks based on "
-            "realized volatility metrics and surface parameters."
+            "realized volatility metrics and surface parameters. You can view "
+            "the actual realized volatility, model-predicted volatility, or both."
         )
     
     # Main content area
     if submit_button:
         try:
-            # Convert date to polars Date format
-            pl_date = pl.date(date.year, date.month, date.day)
-            
             # Show loading spinner while processing
             with st.spinner(f"Loading and processing data for {stock}..."):
-                # Load and filter data for the selected stock (FIX: Use the selected stock, not hardcoded "AAPL")
+                # Load and filter data for the selected stock
                 ohlcv_df = load_data("ohlcv", stock)
                 
                 # Apply the transformation pipeline
-                ohlcv_df = transformation_pipeline(ohlcv_df)
-            
-            # Generate volatility surface
-            with st.spinner("Generating volatility surface..."):
-                fig, surface = generate_vol_surface(ohlcv_df, stock, pl_date, show_surface=False)
+                transformed_df = transformation_pipeline(ohlcv_df)
                 
-                # Display the figure using Streamlit's Plotly integration
-                st.plotly_chart(fig, use_container_width=True)
-            
-            # Display some surface metadata
-            with st.expander("Surface Details", expanded=False):
-                col1, col2 = st.columns(2)
+                # Convert the date string to the same format as in the DataFrame
+                # First, check the type of date column in the transformed DataFrame
+                date_col_type = transformed_df.schema["date"]
                 
-                with col1:
-                    st.subheader("Stock Information")
-                    st.write(f"**Stock:** {stock}")
-                    st.write(f"**Date:** {surface['date']}")  # Use the properly formatted date
+                # Get a string representation of the selected date
+                date_str = date.strftime("%Y-%m-%d")
+                
+                # If the date column is a string in the DataFrame, keep the date as string
+                if str(date_col_type).lower() == "string":
+                    search_date = date_str
+                else:
+                    # Try to create a date compatible with the DataFrame's date type
+                    try:
+                        # Use Polars date object
+                        search_date = pl.date(date.year, date.month, date.day)
+                    except:
+                        # Fall back to the string format if needed
+                        search_date = date_str
+                
+                # Find the closest date in the dataset if exact date is not available
+                available_dates = transformed_df.select("date").unique().sort("date")
+                
+                if available_dates.height == 0:
+                    raise ValueError(f"No data available for stock {stock}")
+                
+                # Handle date type mismatch - convert available dates to strings for comparison
+                available_date_strings = available_dates.select(pl.col("date").cast(str)).to_series().to_list()
+                
+                # Check if the exact date exists in the dataset
+                if date_str in available_date_strings:
+                    # If the exact date exists, use it
+                    search_date = date_str
+                else:
+                    st.warning(f"No data found for exact date {date_str}. Finding the nearest available date.")
                     
-                    # Display some basic stats
-                    if surface['actual_vols']:
-                        avg_vol = sum(surface['actual_vols']) / len(surface['actual_vols'])
-                        st.write(f"**Average Volatility:** {avg_vol:.2f}%")
+                    # Find the closest date
+                    closest_date = min(available_date_strings, key=lambda x: abs((datetime.datetime.strptime(x, "%Y-%m-%d").date() - date).days))
+                    
+                    st.info(f"Using nearest available date: {closest_date}")
+                    search_date = closest_date
+            
+            # Dictionary to store figures for different surface types
+            surfaces = {}
+            
+            # Generate realized volatility surface if requested
+            if surface_type in ["Realized", "Both"]:
+                with st.spinner("Generating realized volatility surface..."):
+                    # Make sure to convert dates to strings for consistent comparison
+                    realized_df = transformed_df.with_columns(pl.col("date").cast(str))
+                    
+                    realized_fig, realized_surface = generate_vol_surface(
+                        realized_df, 
+                        stock, 
+                        search_date, 
+                        show_surface=False
+                    )
+                    
+                    # Update title to indicate realized surface
+                    realized_fig.update_layout(
+                        title=f"Realized Volatility Surface for {stock} on {realized_surface['date']}"
+                    )
+                    
+                    surfaces["Realized"] = (realized_fig, realized_surface)
+            
+            # Generate predicted volatility surface if requested
+            if surface_type in ["Predicted", "Both"]:
+                with st.spinner("Loading model and generating predicted volatility surface..."):
+                    # Load the most recent LGBM model
+                    model_results = load_lgbm_model()
+                    
+                    # Generate prediction data for visualization
+                    pred_df = predict_for_visualization(
+                        model_results=model_results,
+                        df=transformed_df,
+                        stock=stock,
+                        date=search_date
+                    )
+                    
+                    # Convert date column to string for consistent comparison
+                    pred_df = pred_df.with_columns(pl.col("date").cast(str))
+                    
+                    # Generate the volatility surface using the predicted data
+                    predicted_fig, predicted_surface = generate_vol_surface(
+                        pred_df, 
+                        stock, 
+                        search_date, 
+                        show_surface=False
+                    )
+                    
+                    # Update title to indicate predicted surface
+                    predicted_fig.update_layout(
+                        title=f"Predicted Volatility Surface for {stock} on {predicted_surface['date']}"
+                    )
+                    
+                    surfaces["Predicted"] = (predicted_fig, predicted_surface)
+            
+            # Display the figures based on selection
+            if surface_type == "Both":
+                # Create tabs for the different surfaces
+                realized_tab, predicted_tab = st.tabs(["Realized Volatility", "Predicted Volatility"])
                 
-                with col2:
-                    st.subheader("Trading to Calendar Days")
-                    # Show trading windows and corresponding calendar days
-                    mapping_data = {f"{t} trading days": f"{c} calendar days" 
-                                   for t, c in zip(surface['trading_windows'], surface['calendar_days'])}
-                    st.json(mapping_data)
+                with realized_tab:
+                    st.plotly_chart(surfaces["Realized"][0], use_container_width=True)
+                    display_surface_details(stock, surfaces["Realized"][1], "Realized")
+                    
+                with predicted_tab:
+                    st.plotly_chart(surfaces["Predicted"][0], use_container_width=True)
+                    display_surface_details(stock, surfaces["Predicted"][1], "Predicted")
+            else:
+                # Display single surface
+                st.plotly_chart(surfaces[surface_type][0], use_container_width=True)
+                display_surface_details(stock, surfaces[surface_type][1], surface_type)
             
         except ValueError as ve:
             st.error(f"Error: {str(ve)}")
@@ -348,7 +440,34 @@ def main():
                 
         except Exception as e:
             st.error(f"An unexpected error occurred: {str(e)}")
+            import traceback
+            st.error(traceback.format_exc())  # Show the full traceback for debugging
             st.info("Please check your data files and try again.")
+
+def display_surface_details(stock, surface, surface_type):
+    """Display details about the volatility surface."""
+    with st.expander(f"{surface_type} Surface Details", expanded=False):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("Stock Information")
+            st.write(f"**Stock:** {stock}")
+            st.write(f"**Date:** {surface['date']}")
+            
+            # Display some basic stats
+            if surface['actual_vols']:
+                avg_vol = sum(surface['actual_vols']) / len(surface['actual_vols'])
+                st.write(f"**Average Volatility:** {avg_vol:.2f}%")
+                min_vol = min(surface['actual_vols'])
+                max_vol = max(surface['actual_vols'])
+                st.write(f"**Range:** {min_vol:.2f}% - {max_vol:.2f}%")
+        
+        with col2:
+            st.subheader("Trading to Calendar Days")
+            # Show trading windows and corresponding calendar days
+            mapping_data = {f"{t} trading days": f"{c} calendar days" 
+                           for t, c in zip(surface['trading_windows'], surface['calendar_days'])}
+            st.json(mapping_data)
 
 if __name__ == "__main__":
     main()
