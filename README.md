@@ -7,7 +7,7 @@ This repository is the capstone project for Data Science 4010 at Iowa State Univ
 - Emiliano Saucedo (Emilianosau28)
 
 ## Application
-Our dashbaord can be found at [https://ds401-dern-volatility-dashboard.streamlit.app/](https://ds401-dern-volatility-dashboard.streamlit.app/)
+Our dashboard can be found at [https://ds401-dern-volatility-dashboard.streamlit.app/](https://ds401-dern-volatility-dashboard.streamlit.app/)
 
 ## Folders
 ### Data
