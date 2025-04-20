@@ -1,3 +1,4 @@
+# app.py
 import os
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -13,40 +14,41 @@ from src.data_extraction.dataframe_loader import load_data
 from src.data_modeling.lgbm_modeling import load_lgbm_model, predict_for_visualization
 
 # -----------------------------------------------------------------------------
-# About text (single explanation for layman and professional)
+# About text with proper LaTeX for math
 # -----------------------------------------------------------------------------
-ABOUT_TEXT = """
-### What Is an Option and Why Does Volatility Matter?
+ABOUT_TEXT = r"""
+### What Is an Option and Why Does Volatility Matter?  
 An **option** is a contract giving the right—but not the obligation—to buy or sell a stock at a fixed price on or before a certain date.  
 Options are priced largely based on **volatility**, which measures how much the stock’s price moves. Higher volatility raises the chance of large price swings, making options more expensive.
 
 ---
 
-### Implied vs. Local Volatility Surfaces
+### Implied vs. Local Volatility Surfaces  
 - **Implied volatility** is the market’s expectation of future volatility, backed out of option prices across strikes and expiries.  
 - A **local volatility surface** goes deeper: it asks  
-> *“What instantaneous volatility at each stock price and future date would make today’s option prices consistent under a risk‑neutral model?”*  
-One inverts the option pricing model (Dupire’s formula) to recover this surface, which is essential for pricing more complex derivatives.
+  > *“What instantaneous volatility at each stock price and future date would make today’s option prices consistent under a risk‑neutral model?”*  
+  One inverts the option pricing model (Dupire’s formula) to recover this surface, which is essential for pricing more complex derivatives.
 
 ---
 
-### Realized Local Volatility Surface
+### Realized Local Volatility Surface  
 The **Realized Local Volatility Surface (RLVS)** brings these ideas to historical data:
 
 1. **Realized volatility** is what actually happened: how much the stock price varied over a past window.  
-2. A simple realized‐vol curve is only a single line for the one path the stock took.  
-3. The **RLVS** estimates  
-\[
-\sigma_{\mathrm{real}}(K,\,T)
-\;=\;
-E\bigl[\text{Realized Vol}\,\bigm|\tfrac{S_T}{S_0}=e^{k}\bigr],
-\]
-where \(K=S_0e^k\) is the strike and \(T\) is time to expiry.  
-It tells you, *“Had the stock ended at strike \(K\) in \(T\) days, what volatility would we have realized?”*
+2. A simple realized‑vol curve is only a single line for the one path the stock took.  
+3. The RLVS estimates the conditional expectation  
+   $$
+   \sigma_{\mathrm{real}}(K, T)
+   \;=\;
+   \mathbb{E}\bigl[\mathrm{RealizedVol}\,\bigm|\tfrac{S_T}{S_0}=e^{k}\bigr],
+   $$
+   where $K = S_0 e^{k}$ is the strike and $T$ is the time to expiry.  
+   It tells you,  
+   > *“Had the stock ended at strike \(K\) in \(T\) days, what volatility would we have realized?”*
 
 ---
 
-This app lets you compare that **historical conditional vol surface** to today’s **market‐implied** local vol surface—highlighting where reality and expectation diverge.
+This app lets you compare that **historical conditional vol surface** to today’s **market‑implied** local vol surface—highlighting where reality and expectation diverge.
 """
 
 # -----------------------------------------------------------------------------
@@ -115,9 +117,7 @@ def generate_vol_surface(df: pl.DataFrame, stock: str, date, show_surface=False)
             rel_s = rel/(vol0*sqrt_yrs)
             bf = min(yrs*5, 0.8)
             ek = (1-bf)*rel + bf*rel_s
-            # skew
             skew = data["skew"] * (abs(ek)*data["wing"] if ek<0 else -ek/data["wing"])
-            # curvature
             curv = data["curv"] * ek**2 * (1+2*data["vov"])
             corr = data["pvc"] * ek * 0.5
             inten= (data["vi"]-0.5)*2*abs(ek)**2
@@ -155,7 +155,6 @@ def generate_vol_surface(df: pl.DataFrame, stock: str, date, show_surface=False)
 
     return fig, {
         "K": Strike_mesh, "T": Tm, "surface": surf,
-        "strikes_obs": strikes_obs, "vols_obs": vols_obs,
         "cal_days": cal_days
     }
 
@@ -164,51 +163,50 @@ def display_surface_details(stock, surface, stype):
         col1, col2 = st.columns(2)
         with col1:
             st.write(f"**Stock:** {stock}")
-            st.write(f"**Date:** {surface.get('date', '')}")
-            if surface.get("vols_obs"):
-                avg = np.mean(surface["vols_obs"])
-                st.write(f"**Avg Vol:** {avg:.2f}")
+            st.write(f"**Surface Type:** {stype}")
         with col2:
             st.write("**Trading → Calendar**")
-            st.json({f"{t}td": f"{c}cd"
+            st.json({f"{t} td": f"{c} cd"
                      for t,c in zip(surface.get("trading_windows", []), surface["cal_days"])})
 
 def main():
     st.set_page_config(page_title="Volatility Surface App", layout="wide")
-    # Tabs: Visualizer vs About
-    viz_tab, about_tab = st.tabs(["Visualizer","About"])
+
+    # Tabs for Visualizer and About
+    viz_tab, about_tab = st.tabs(["Visualizer", "About"])
 
     with about_tab:
-        st.markdown(ABOUT_TEXT)
+        st.markdown(ABOUT_TEXT, unsafe_allow_html=False)
 
     with viz_tab:
         st.title("📈 Volatility Surface Visualizer")
-        # Sidebar inputs
-        symbols = []
+
+        # Symbols list
         try:
             with open("data/processed/symbols.txt") as f:
                 symbols = [s.strip() for s in f]
         except:
-            symbols = ["AAPL","MSFT","GOOGL"]
+            symbols = ["AAPL", "MSFT", "GOOGL"]
 
-        stock = st.sidebar.selectbox("Stock", symbols, index=0)
-        date  = st.sidebar.date_input("Date", datetime.date.today())
-        surf_type = st.sidebar.radio("Surface Type", ["Realized","Predicted","Both"])
-        if st.sidebar.button("Generate"):
-            # Load & prep
+        # Sidebar inputs
+        stock = st.sidebar.selectbox("Stock", symbols)
+        default_date = datetime.date(2024, 1, 3)  # Known trading day
+        date  = st.sidebar.date_input("Date", default_date)
+        surf_type = st.sidebar.radio("Surface Type", ["Realized", "Predicted", "Both"])
+        generate = st.sidebar.button("Generate")
+
+        if generate:
+            # Load and transform
             ohlcv = load_data("ohlcv", stock)
             df     = transformation_pipeline(ohlcv)
-            # unify date format
-            df = df.with_columns(pl.col("date").cast(str))
-            dstr = date.strftime("%Y-%m-%d")
+            df     = df.with_columns(pl.col("date").cast(str))
+            dstr   = date.strftime("%Y-%m-%d")
 
             figs = {}
-            # Realized
-            if surf_type in ("Realized","Both"):
+            if surf_type in ("Realized", "Both"):
                 fr, sr = generate_vol_surface(df, stock, dstr, show_surface=False)
                 figs["Realized"] = (fr, sr)
-            # Predicted
-            if surf_type in ("Predicted","Both"):
+            if surf_type in ("Predicted", "Both"):
                 model = load_lgbm_model()
                 pdf   = predict_for_visualization(model, df, stock, dstr)
                 pdf   = pdf.with_columns(pl.col("date").cast(str))
@@ -217,7 +215,7 @@ def main():
 
             # Display
             if surf_type == "Both":
-                rtab, ptab = st.tabs(["Realized","Predicted"])
+                rtab, ptab = st.tabs(["Realized", "Predicted"])
                 with rtab:
                     st.plotly_chart(figs["Realized"][0], use_container_width=True)
                     display_surface_details(stock, figs["Realized"][1], "Realized")
