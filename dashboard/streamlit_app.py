@@ -9,7 +9,6 @@ import numpy as np
 import polars as pl
 import datetime
 
-# Now import should work
 from src.data_transformation.transformation_pipeline import transformation_pipeline
 from src.data_extraction.dataframe_loader import load_data
 from src.data_modeling.lgbm_modeling import load_lgbm_model, predict_for_visualization
@@ -43,41 +42,26 @@ def generate_vol_surface(df, stock, date, show_surface=False):
     if row.height == 0:
         raise ValueError(f"No data found for {stock} on {date}")
     
-    # Define trading day windows (these are the windows in your _future columns)
+    # Define trading day windows
     trading_windows = [10, 15, 20, 25, 30, 35]
-    
     # Convert trading days to approximate calendar days
-    # A common approximation: calendar days ≈ trading days × (7/5)
     calendar_days = [int(round(window * 7/5)) for window in trading_windows]
     
-    # Extract realized values for all timepoints
+    # Extract realized values and surface parameters
     realized_data = {}
     for i, trading_window in enumerate(trading_windows):
         days = calendar_days[i]
-        years = days / 365.0  # For term structure effects
+        years = days / 365.0
         
-        # Extract base realized values
-        realized_vol = float(row[f"YZVol_{trading_window}_future"][0]) * np.sqrt(252)  # Annualize
-        realized_k = float(row[f"LogPriceRatio_{trading_window}_future"][0])
-        
-        # Extract surface parameter values with proper bounds
-        skew = float(row[f"VolSkew_{trading_window}_future"][0])
-        curvature = min(max(float(row[f"VolCurvature_{trading_window}_future"][0]), -5.0), 5.0)  # Bound curvature
-        
-        # Ensure wing_ratio is bounded away from zero
-        wing_ratio = max(float(row[f"WingRatio_{trading_window}_future"][0]), 0.2)
-        
-        # Bound mean reversion to reasonable values
-        mean_reversion = min(max(float(row[f"MeanReversion_{trading_window}_future"][0]), 0.01), 10.0)
-        
-        # Ensure vol_of_vol is positive
-        vol_of_vol = max(float(row[f"VolOfVol_{trading_window}_future"][0]), 0.01)
-        
-        # Ensure price_vol_corr is within [-1, 1]
-        price_vol_corr = min(max(float(row[f"PriceVolCorr_{trading_window}_future"][0]), -1.0), 1.0)
-        
-        # Ensure vol_intensity is within [0, 1]
-        vol_intensity = min(max(float(row[f"VolIntensity_{trading_window}_future"][0]), 0.0), 1.0)
+        realized_vol = float(row[f"YZVol_{trading_window}_future"][0]) * np.sqrt(252)
+        realized_k   = float(row[f"LogPriceRatio_{trading_window}_future"][0])
+        skew         = float(row[f"VolSkew_{trading_window}_future"][0])
+        curvature    = float(row[f"VolCurvature_{trading_window}_future"][0])
+        wing_ratio   = float(row[f"WingRatio_{trading_window}_future"][0])
+        mean_rev     = float(row[f"MeanReversion_{trading_window}_future"][0])
+        vol_of_vol   = float(row[f"VolOfVol_{trading_window}_future"][0])
+        price_vol_corr = float(row[f"PriceVolCorr_{trading_window}_future"][0])
+        vol_intensity  = float(row[f"VolIntensity_{trading_window}_future"][0])
         
         realized_data[days] = {
             'vol': realized_vol,
@@ -85,171 +69,81 @@ def generate_vol_surface(df, stock, date, show_surface=False):
             'skew': skew,
             'curvature': curvature,
             'wing_ratio': wing_ratio,
-            'mean_reversion': mean_reversion,
+            'mean_reversion': mean_rev,
             'vol_of_vol': vol_of_vol,
             'price_vol_corr': price_vol_corr,
             'vol_intensity': vol_intensity,
-            'trading_window': trading_window,
             'years': years
         }
     
-    # Determine moneyness range dynamically
-    realized_moneyness = [realized_data[t]['moneyness'] for t in calendar_days]
-    min_realized = min(realized_moneyness)
-    max_realized = max(realized_moneyness)
+    # Determine moneyness grid
+    kms = [d['moneyness'] for d in realized_data.values()]
+    m_min, m_max = min(kms) - 0.15, max(kms) + 0.15
+    moneyness = np.linspace(m_min, m_max, 50)
     
-    # Create wider range around realized moneyness points
-    moneyness_padding = 0.15
-    moneyness_min = min_realized - moneyness_padding
-    moneyness_max = max_realized + moneyness_padding
-    moneyness = np.linspace(moneyness_min, moneyness_max, 50)
-    
-    # Create meshgrid for surface plotting using calendar days
+    # Build meshgrid
     K, T = np.meshgrid(moneyness, calendar_days)
-    vol_surface = np.zeros(K.shape)
+    vol_surface = np.zeros_like(K)
     
-    # Generate surface with correct mathematics
+    # Populate surface
     for i, days in enumerate(calendar_days):
         data = realized_data[days]
-        realized_vol = data['vol']
-        realized_k = data['moneyness']
-        years = data['years']
-        
-        # Square root of time factor for standardization
-        sqrt_years = np.sqrt(years)
-        
+        rv, k0, yrs = data['vol'], data['moneyness'], data['years']
+        sqrt_yr = np.sqrt(yrs)
         for j, k in enumerate(moneyness):
-            # Calculate relative moneyness (distance from realized moneyness)
-            relative_k = k - realized_k
-            
-            # IMPROVEMENT 1: Standardize relative moneyness by volatility and time
-            # This creates more consistent shapes across maturities
-            relative_k_scaled = relative_k / (realized_vol * sqrt_years)
-            
-            # Use a blend of raw and scaled moneyness for better behavior
-            # (100% scaled can be too extreme for short dates with high vol)
-            blend_factor = min(years * 5, 0.8)  # More scaling for longer horizons
-            effective_k = (1 - blend_factor) * relative_k + blend_factor * relative_k_scaled
-            
-            # Skew component - asymmetric effect
-            skew_effect = 0
-            if relative_k < 0:  # Put side (typically higher volatility)
-                skew_effect = data['skew'] * abs(effective_k) * data['wing_ratio']
-            else:  # Call side
-                skew_effect = -data['skew'] * effective_k / data['wing_ratio']
-            
-            # Curvature component - creates the smile/frown
-            curvature_effect = data['curvature'] * effective_k**2 * (1 + 2.0 * data['vol_of_vol'])
-            
-            # Price-vol correlation effect
-            corr_effect = data['price_vol_corr'] * effective_k * 0.5
-            
-            # Intensity effect - affects tails
-            intensity_effect = (data['vol_intensity'] - 0.5) * 2.0 * abs(effective_k)**2
-            
-            # IMPROVEMENT 2: Add vol_of_vol effect on total level
-            # Many stochastic vol models have vol-of-vol affect total variance
-            vol_level_effect = 0.05 * data['vol_of_vol'] * years
-            
-            # Combined effect - must equal 0 when k = realized_k
-            combined_effect = skew_effect + curvature_effect + corr_effect + intensity_effect
-            
-            # Final volatility calculation
-            vol = realized_vol * (1.0 + combined_effect) * (1.0 + vol_level_effect)
-            
-            # Ensure volatility stays within reasonable bounds
-            vol = max(0.05, min(vol, 2.0))
-            vol_surface[i, j] = vol
+            rel = k - k0
+            rel_s = rel / (rv * sqrt_yr)
+            bf = min(yrs*5, 0.8)
+            eff_k = (1-bf)*rel + bf*rel_s
+            # components
+            skew_eff  = (data['skew'] * abs(eff_k) * data['wing_ratio']
+                         if rel<0 else -data['skew']*eff_k/data['wing_ratio'])
+            curv_eff  = data['curvature'] * eff_k**2 * (1+2*data['vol_of_vol'])
+            corr_eff  = data['price_vol_corr'] * eff_k * 0.5
+            inten_eff = (data['vol_intensity']-0.5)*2*abs(eff_k)**2
+            vol_lvl   = 0.05*data['vol_of_vol']*yrs
+            comb      = skew_eff + curv_eff + corr_eff + inten_eff
+            v = rv * (1+comb)*(1+vol_lvl)
+            vol_surface[i,j] = np.clip(v, 0.05, 2.0)
     
-    # Create 3D surface plot
+    # Plotly figure
     fig = go.Figure()
-    
-    # Add main surface
-    fig.add_trace(go.Surface(
-        x=K, 
-        y=T, 
-        z=vol_surface, 
-        colorscale='Viridis',
-        colorbar=dict(title='Annualized Volatility'),
-        name='Volatility Surface'
-    ))
-    
-    # Add actual realized points
-    actual_moneyness = [realized_data[t]['moneyness'] for t in calendar_days]
-    actual_vols = [realized_data[t]['vol'] for t in calendar_days]
-    
-    fig.add_trace(go.Scatter3d(
-        x=actual_moneyness,
-        y=calendar_days,
-        z=actual_vols,
-        mode='markers',
-        marker=dict(size=7, color='red'),
-        name='Realized Volatility'
-    ))
-    
-    # Add text annotation showing trading days to calendar days mapping
-    annotations = []
-    for i, (trade_days, cal_days) in enumerate(zip(trading_windows, calendar_days)):
-        annotations.append(
-            dict(
-                showarrow=False,
-                x=min_realized,
-                y=cal_days,
-                z=0,
-                text=f"{trade_days}td",
-                xanchor="left",
-                font=dict(color="white", size=10)
-            )
-        )
-    
-    # Properly format the date for the title
-    if isinstance(date, pl.Date) or isinstance(date, pl.Expr):
-        # If it's a Polars Date or Expression, convert to string in YYYY-MM-DD format
-        date_value = row["date"][0]
-        if hasattr(date_value, 'strftime'):
-            date_str = date_value.strftime("%Y-%m-%d")
-        else:
-            date_str = str(date_value).split(' ')[0]  # Take just the date part if there's a time component
-    elif isinstance(date, datetime.date):
-        # If it's a Python datetime.date object
-        date_str = date.strftime("%Y-%m-%d")
-    else:
-        # If it's already a string or something else
-        date_str = str(date).split(' ')[0]  # Take just the date part if there's a time component
-    
-    # Set axis labels and title with properly formatted date
+    fig.add_trace(go.Surface(x=K, y=T, z=vol_surface,
+                             colorscale='Viridis',
+                             colorbar=dict(title='Ann. Vol'),
+                             name='Surface'))
+    # Realized points
+    actual_m = [realized_data[d]['moneyness'] for d in calendar_days]
+    actual_v = [realized_data[d]['vol'] for d in calendar_days]
+    fig.add_trace(go.Scatter3d(x=actual_m, y=calendar_days, z=actual_v,
+                               mode='markers',
+                               marker=dict(color='red', size=6),
+                               name='Realized'))
     fig.update_layout(
-        title=f"Realized Volatility Surface for {stock} on {date_str}",
+        title=f"Vol Surface for {stock} on {date}",
         scene=dict(
-            xaxis_title='Log(Future Price / Spot Price) ~ log-moneyness',
-            yaxis_title='Calendar Days',
-            zaxis_title='Annualized Volatility',
-            xaxis=dict(range=[moneyness_min, moneyness_max]),
-            yaxis=dict(range=[min(calendar_days), max(calendar_days)]),
-            zaxis=dict(range=[0, np.nanmax(vol_surface) * 1.1]),
-            annotations=annotations
+            xaxis_title='Log Moneyness',
+            yaxis_title='Cal. Days',
+            zaxis_title='Ann. Vol'
         ),
-        width=900,
-        height=700,
-        margin=dict(r=20, l=10, b=10, t=50)
+        width=900, height=700
     )
+    if show_surface:
+        fig.show()
     
-    # Pack surface data using calendar days
     surface_data = {
-        'K': K.tolist(),  # Convert numpy arrays to lists for JSON serialization
+        'K': K.tolist(),
         'T': T.tolist(),
         'vol_surface': vol_surface.tolist(),
         'calendar_days': calendar_days,
-        'trading_windows': trading_windows,
         'moneyness': moneyness.tolist(),
-        'actual_moneyness': actual_moneyness,
-        'actual_vols': actual_vols,
-        'realized_data': realized_data,
-        'date': date_str,  # Use the properly formatted date
+        'actual_moneyness': actual_m,
+        'actual_vols': actual_v,
+        'date': str(date),
         'stock': stock
     }
-    
     return fig, surface_data
+
 
 def main():
     st.set_page_config(
@@ -261,213 +155,72 @@ def main():
     st.title("📊 Stock Volatility Surface Visualizer")
     st.write("Select a stock and date to visualize the volatility surface")
     
-    # Read ticker symbols from file
+    # Sidebar inputs
     try:
         with open("data/processed/symbols.txt", "r") as f:
-            symbols = [line.strip() for line in f.readlines()]
-    except FileNotFoundError:
-        st.error("Symbols file not found. Make sure 'data/processed/symbols.txt' exists.")
-        symbols = ["AAPL", "MSFT", "GOOGL"]  # Fallback symbols
+            symbols = [s.strip() for s in f]
+    except:
+        symbols = ["AAPL","MSFT","GOOGL"]
     
-    # Create sidebar for inputs
     with st.sidebar:
         st.header("Parameters")
-        
-        # Create a stock selector with search functionality
-        stock = st.selectbox(
-            "Select Stock:",
-            options=symbols,
-            index=symbols.index("AAPL") if "AAPL" in symbols else 0,
-            help="Choose a stock ticker to visualize"
-        )
-        
-        # Date selector
-        default_date = datetime.date(2022, 5, 6)  # Default from example
-        date = st.date_input(
-            "Select Date:",
-            value=default_date,
-            help="Choose a date to visualize the volatility surface"
-        )
-        
-        # Surface type selector
-        surface_type = st.radio(
-            "Surface Type:",
-            options=["Realized", "Predicted", "Both"],
-            index=0,
-            help="Choose which type of volatility surface to display"
-        )
-        
-        # Submit button
-        submit_button = st.button("Generate Volatility Surface", use_container_width=True)
-        
-        # Add information about the app
+        stock = st.selectbox("Select Stock:", symbols, index=0)
+        date = st.date_input("Select Date:", value=datetime.date.today())
+        surface_type = st.radio("Surface Type:", ["Realized","Predicted","Both"])
         st.markdown("---")
         st.markdown("### About")
-        st.info(
-            "This app visualizes volatility surfaces for stocks based on "
-            "realized volatility metrics and surface parameters. You can view "
-            "the actual realized volatility, model-predicted volatility, or both."
-        )
-    
-    # Main content area
-    if submit_button:
-        try:
-            # Show loading spinner while processing
-            with st.spinner(f"Loading and processing data for {stock}..."):
-                # Load and filter data for the selected stock
-                ohlcv_df = load_data("ohlcv", stock)
-                
-                # Apply the transformation pipeline
-                transformed_df = transformation_pipeline(ohlcv_df)
-                
-                # Convert the date string to the same format as in the DataFrame
-                # First, check the type of date column in the transformed DataFrame
-                date_col_type = transformed_df.schema["date"]
-                
-                # Get a string representation of the selected date
-                date_str = date.strftime("%Y-%m-%d")
-                
-                # If the date column is a string in the DataFrame, keep the date as string
-                if str(date_col_type).lower() == "string":
-                    search_date = date_str
-                else:
-                    # Try to create a date compatible with the DataFrame's date type
-                    try:
-                        # Use Polars date object
-                        search_date = pl.date(date.year, date.month, date.day)
-                    except:
-                        # Fall back to the string format if needed
-                        search_date = date_str
-                
-                # Find the closest date in the dataset if exact date is not available
-                available_dates = transformed_df.select("date").unique().sort("date")
-                
-                if available_dates.height == 0:
-                    raise ValueError(f"No data available for stock {stock}")
-                
-                # Handle date type mismatch - convert available dates to strings for comparison
-                available_date_strings = available_dates.select(pl.col("date").cast(str)).to_series().to_list()
-                
-                # Check if the exact date exists in the dataset
-                if date_str in available_date_strings:
-                    # If the exact date exists, use it
-                    search_date = date_str
-                else:
-                    st.warning(f"No data found for exact date {date_str}. Finding the nearest available date.")
-                    
-                    # Find the closest date
-                    closest_date = min(available_date_strings, key=lambda x: abs((datetime.datetime.strptime(x, "%Y-%m-%d").date() - date).days))
-                    
-                    st.info(f"Using nearest available date: {closest_date}")
-                    search_date = closest_date
-            
-            # Dictionary to store figures for different surface types
-            surfaces = {}
-            
-            # Generate realized volatility surface if requested
-            if surface_type in ["Realized", "Both"]:
-                with st.spinner("Generating realized volatility surface..."):
-                    # Make sure to convert dates to strings for consistent comparison
-                    realized_df = transformed_df.with_columns(pl.col("date").cast(str))
-                    
-                    realized_fig, realized_surface = generate_vol_surface(
-                        realized_df, 
-                        stock, 
-                        search_date, 
-                        show_surface=False
-                    )
-                    
-                    # Update title to indicate realized surface
-                    realized_fig.update_layout(
-                        title=f"Realized Volatility Surface for {stock} on {realized_surface['date']}"
-                    )
-                    
-                    surfaces["Realized"] = (realized_fig, realized_surface)
-            
-            # Generate predicted volatility surface if requested
-            if surface_type in ["Predicted", "Both"]:
-                with st.spinner("Loading model and generating predicted volatility surface..."):
-                    # Load the most recent LGBM model
-                    model_results = load_lgbm_model()
-                    
-                    # Generate prediction data for visualization
-                    pred_df = predict_for_visualization(
-                        model_results=model_results,
-                        df=transformed_df,
-                        stock=stock,
-                        date=search_date
-                    )
-                    
-                    # Convert date column to string for consistent comparison
-                    pred_df = pred_df.with_columns(pl.col("date").cast(str))
-                    
-                    # Generate the volatility surface using the predicted data
-                    predicted_fig, predicted_surface = generate_vol_surface(
-                        pred_df, 
-                        stock, 
-                        search_date, 
-                        show_surface=False
-                    )
-                    
-                    # Update title to indicate predicted surface
-                    predicted_fig.update_layout(
-                        title=f"Predicted Volatility Surface for {stock} on {predicted_surface['date']}"
-                    )
-                    
-                    surfaces["Predicted"] = (predicted_fig, predicted_surface)
-            
-            # Display the figures based on selection
-            if surface_type == "Both":
-                # Create tabs for the different surfaces
-                realized_tab, predicted_tab = st.tabs(["Realized Volatility", "Predicted Volatility"])
-                
-                with realized_tab:
-                    st.plotly_chart(surfaces["Realized"][0], use_container_width=True)
-                    display_surface_details(stock, surfaces["Realized"][1], "Realized")
-                    
-                with predicted_tab:
-                    st.plotly_chart(surfaces["Predicted"][0], use_container_width=True)
-                    display_surface_details(stock, surfaces["Predicted"][1], "Predicted")
-            else:
-                # Display single surface
-                st.plotly_chart(surfaces[surface_type][0], use_container_width=True)
-                display_surface_details(stock, surfaces[surface_type][1], surface_type)
-            
-        except ValueError as ve:
-            st.error(f"Error: {str(ve)}")
-            if "No data found" in str(ve):
-                st.info("Try selecting a different date or stock.")
-                
-        except Exception as e:
-            st.error(f"An unexpected error occurred: {str(e)}")
-            import traceback
-            st.error(traceback.format_exc())  # Show the full traceback for debugging
-            st.info("Please check your data files and try again.")
+        st.markdown("""
+**What is a Local Volatility Surface?**
 
-def display_surface_details(stock, surface, surface_type):
-    """Display details about the volatility surface."""
-    with st.expander(f"{surface_type} Surface Details", expanded=False):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("Stock Information")
-            st.write(f"**Stock:** {stock}")
-            st.write(f"**Date:** {surface['date']}")
+A *volatility surface* shows how the market’s expectation of future volatility varies across option strike prices and times to expiration. Classic models assume constant volatility, but real market prices imply a “smile” or “skew” in volatility depending on moneyness (ratio of strike to spot) and maturity.
+
+A *local volatility surface* σ(S,t) is the instantaneous volatility the market would assign to an underlying price S at time t, calibrated so that model prices match observed option prices across strikes and maturities.
+
+**What is a Realized Local Volatility Surface?**
+
+Instead of using option prices (implied volatility), a *realized* local volatility surface is built from actual historical price movements. It maps how volatility truly behaved in the past for each combination of price level and time horizon. By comparing this realized surface to the theoretical local volatility implied by the options market, we can identify potential mispricings or inefficiencies.
+        """)
+        st.markdown("---")
+        submit = st.button("Generate")
+
+    if submit:
+        try:
+            ohlcv_df = load_data("ohlcv", stock)
+            transformed = transformation_pipeline(ohlcv_df)
             
-            # Display some basic stats
-            if surface['actual_vols']:
-                avg_vol = sum(surface['actual_vols']) / len(surface['actual_vols'])
-                st.write(f"**Average Volatility:** {avg_vol:.2f}%")
-                min_vol = min(surface['actual_vols'])
-                max_vol = max(surface['actual_vols'])
-                st.write(f"**Range:** {min_vol:.2f}% - {max_vol:.2f}%")
+            # Handle date lookup
+            date_str = date.strftime("%Y-%m-%d")
+            df_str = transformed.with_columns(pl.col("date").cast(str))
+            available = df_str["date"].unique().to_list()
+            if date_str not in available:
+                closest = min(available, key=lambda d: abs((datetime.datetime.strptime(d, "%Y-%m-%d").date() - date).days))
+                st.warning(f"No data for {date_str}, using nearest {closest}.")
+                date_str = closest
+            
+            surfaces = {}
+            if surface_type in ["Realized","Both"]:
+                fig_r, surf_r = generate_vol_surface(df_str, stock, date_str)
+                surfaces["Realized"] = (fig_r, surf_r)
+            if surface_type in ["Predicted","Both"]:
+                model = load_lgbm_model()
+                pred_df = predict_for_visualization(model, transformed, stock, date_str)
+                pred_df = pred_df.with_columns(pl.col("date").cast(str))
+                fig_p, surf_p = generate_vol_surface(pred_df, stock, date_str)
+                surfaces["Predicted"] = (fig_p, surf_p)
+            
+            if surface_type == "Both":
+                tab1, tab2 = st.tabs(["Realized","Predicted"])
+                with tab1:
+                    st.plotly_chart(surfaces["Realized"][0], use_container_width=True)
+                with tab2:
+                    st.plotly_chart(surfaces["Predicted"][0], use_container_width=True)
+            else:
+                st.plotly_chart(surfaces[surface_type][0], use_container_width=True)
         
-        with col2:
-            st.subheader("Trading to Calendar Days")
-            # Show trading windows and corresponding calendar days
-            mapping_data = {f"{t} trading days": f"{c} calendar days" 
-                           for t, c in zip(surface['trading_windows'], surface['calendar_days'])}
-            st.json(mapping_data)
+        except Exception as e:
+            st.error(f"Error: {e}")
+            import traceback; st.error(traceback.format_exc())
+
 
 if __name__ == "__main__":
     main()
