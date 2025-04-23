@@ -107,3 +107,8 @@ We have started to explore how to best visualize our model results on our dashbo
 ### Spring Break Plans
 
 The group has decided to continue working on our project when possible during Spring Break. Discussions were held the day before break to determine which goals we would like to accomplish over break. We want to have a large push towards finalizing the model and beginning the dashboard. Ideally, we will have the model complete and the dashboard began by the end of break. We understand that each team member has different amounts of time they are able to commit, but will do what they can to take advantage of the time before next class period.
+
+## 2025-03-30: Finalize Dashboard Sketch.
+
+[Streamlit App](https://ds401-dern-volatility-dashboard.streamlit.app/)
+This weekend we have been able to upload all of our data to our GitHub repo, and we have been able to populate our streamlit app with one of our visualizations. We have the data pipeline, where we can grab our stocks, make the needed transformations, and create a visualization, mostly complete. We need to move some methods from our streamlit app files to their own modules to keep the program scalable and maintain good dev practices. We have some more features that we would like to add to our dashboard beyond this initial 'realized vol surface'. We would like to use LGBM to model vol surfaces, then compare our modeled result to surfaces created from option chain data, to find areas with pricing inefficiencies.
