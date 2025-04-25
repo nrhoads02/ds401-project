@@ -1,5 +1,22 @@
 # Milestones
 
+## 2025-01-31: Team Formation
+
+### Team Name
+Our team name is DERN, which is an abbreviation of the four first names of the people working on the project. We chose it as it is a simple but identifiable name that is also short and easy to say and read.
+
+### Summary of Project Idea Discussion
+We have discussed a couple project ideas, with the leading candidate being a database in finance, specifically stock option prices. Most of us are flexible in terms of what we want to do, so we will be bringing in various data sets on Monday to discuss further what we want to do.
+
+### Summary of Tool Proficiencies/Preferences
+We have settled on a hybrid of python and R for the programming within a GitHub repository. We will handle everything up until the dashboarding for our project using these softwares. We are still brainstorming what we will use for the dashboard, we will decide closer to when we begin dashboarding.
+
+### Tasks to Settle on a Project
+All team members will bring a topic and dataset that we are each interested in, then we will decide as a team what dataset will be used. We are definitely going to be looking for a dataset that involves data cleaning and other manipulations to enable efficient analysis so that we have a good challenge.
+
+### Communication
+We will be using Discord to communicate, specifically a channel in the class Discord that Prof. Niemi will be creating.
+
 ## 2025-02-17: Acquire Data Milestone
 
 ### Technology Plan
@@ -132,3 +149,4 @@ Explanatory variables: open, high, low, close, volume, log returns, On-Balance V
 [Streamlit app](https://ds401-dern-volatility-dashboard.streamlit.app/)
 We have added in an about section defining jargon related to the surfaces we are visualizing. This should help new users understand what they are looking at. We are still in the process of refining our surface generation process, but we have made some good progress this week, and should have a new strategy out there some time next week. We also are still working on creating stronger code documentation and cleaning up our repo a bit, but we are still making good progress with our dashboard.
 
+## 2025-04-27: Finalize Dashboard Milestone
