@@ -283,7 +283,9 @@ def display_point_differences(
                     diff_df = pl.DataFrame(point_details)
                     # Add '$' prefix to K column for display if it exists
                     if "K" in diff_df.columns:
-                       diff_df = diff_df.with_columns(pl.format("${:.2f}", pl.col("K")).alias("K_Display"))
+                       diff_df = diff_df.with_columns(
+                           pl.col("K").cast(pl.Float64).map_elements(lambda k: f"${k:.2f}", return_dtype=pl.Utf8).alias("K_Display")
+                       )
                        # Select and order columns for display
                        display_cols_order = ["K_Display", "T", "Realized σ", f"{surface_name} σ", "Difference"]
                        # Filter out columns that don't exist in df
