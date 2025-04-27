@@ -221,6 +221,81 @@ def adjust_splits(ohlcv: pl.DataFrame, max_duplicate_days=150, verbose=False) ->
         .sort(["date", "act_symbol"])  # Maintain original date ordering
     )
 
+def adjust_option_splits(option_chain_df: pl.DataFrame, max_duplicate_days=150, verbose=False) -> pl.DataFrame:
+    """
+    Adjusts option chain strike prices for stock splits using reverse cumulative split factors.
+
+    Parameters:
+        option_chain_df (pl.DataFrame): DataFrame with columns including: act_symbol, date, strike
+        max_duplicate_days (int): Maximum number of days between duplicate splits (default: 150)
+        verbose (bool): Whether to print verbose output (default: False)
+
+    Returns:
+        pl.DataFrame: Option chain data with split-adjusted strike prices
+    """
+    print("Adjusting option chain data for stock splits...")
+
+    # Load and clean split data (similar to adjust_splits)
+    splits_raw = load_data("split")
+    if verbose:
+        print("Checking for and removing duplicate split records...")
+    splits_cleaned = remove_duplicates(splits_raw, max_days=max_duplicate_days, verbose=verbose) #
+
+    # Process splits data to calculate cumulative factor (similar to adjust_splits)
+    splits = (
+        splits_cleaned
+        .with_columns(
+            pl.when((pl.col("to_factor") == 0) | (pl.col("for_factor") == 0))
+            .then(1.0)
+            .otherwise(pl.col("to_factor") / pl.col("for_factor"))
+            .alias("split_factor")
+        )
+        .with_columns(pl.col("ex_date").dt.offset_by("-1d").alias("ex_date")) #
+        .filter(pl.col("split_factor") != 1.0)
+        .select(["act_symbol", "ex_date", "split_factor"])
+    )
+
+    splits_processed = (
+        splits.sort(["act_symbol", "ex_date"])
+        .group_by("act_symbol", maintain_order=True)
+        .agg(
+            pl.col("ex_date"),
+            pl.col("split_factor")
+            .reverse()
+            .cum_prod()
+            .reverse()
+            .alias("cumulative_factor")
+        )
+        .explode(["ex_date", "cumulative_factor"])
+    ) #
+
+    if verbose:
+        print("Split data processed and cumulative factors calculated...")
+
+    # Join splits to option chain data and calculate adjustments
+    adjusted_options_df = (
+        option_chain_df.sort(["act_symbol", "date"])
+        .join_asof(
+            splits_processed.sort(["act_symbol", "ex_date"]),
+            left_on="date",
+            right_on="ex_date",
+            by="act_symbol",
+            strategy="forward" # Apply factors from the most recent split forward
+        )
+        .with_columns(
+            pl.coalesce(pl.col("cumulative_factor"), pl.lit(1.0)).alias("adjustment_factor") # Default to 1.0 if no split history
+        )
+        .with_columns(
+            # Adjust strike price: Divide by the adjustment factor
+            (pl.col("strike") / pl.col("adjustment_factor")).round(4).alias("strike") # Using round(4) for strike precision.
+        )
+        .drop(["ex_date", "cumulative_factor", "adjustment_factor"]) # Clean up intermediate columns
+        .sort(["date", "act_symbol", "expiration", "strike"]) # Maintain a reasonable sort order
+    )
+
+    print("Option chain split adjustment complete.")
+    return adjusted_options_df
+
 if __name__ == "__main__":
     # Load OHLCV data from Parquet files
     ohlcv = load_data("ohlcv")
