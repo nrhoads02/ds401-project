@@ -150,3 +150,7 @@ Explanatory variables: open, high, low, close, volume, log returns, On-Balance V
 We have added in an about section defining jargon related to the surfaces we are visualizing. This should help new users understand what they are looking at. We are still in the process of refining our surface generation process, but we have made some good progress this week, and should have a new strategy out there some time next week. We also are still working on creating stronger code documentation and cleaning up our repo a bit, but we are still making good progress with our dashboard.
 
 ## 2025-04-27: Finalize Dashboard Milestone
+
+[Streamlit app](https://ds401-dern-volatility-dashboard.streamlit.app/)
+
+Our app has been fully refactored to use our new LGBM approach for modeling the entire surface. We have added in capabilities to comparison with realized points and the options market implied surface. We did work on making dates work by searching backwards for the nearest date, effectively eliminating errors that come from poor user selection. We have refined our 'about' section a bit, too. The updates over this last week have been plentiful and are very apparent when using our application.
