@@ -1,8 +1,8 @@
 TODO List for Documentation Updates
 
-1. MILESTONES.md Updates
-2. README for each /src subfolder
-3. Update requirements.txt (maybe separate for each /src folder)
-4. Parquet file split
-5. Dolt updates to note that we don't actually need to pull this for use anymore
-6. Clean up old files that aren't in use (xgboost, old visualization modules)
+1.DONE MILESTONES.md Updates
+2.DONE README for each /src subfolder
+3.(this is good enough for the app to run as-is) Update requirements.txt (maybe separate for each /src folder) 
+4.DONE Parquet file split
+5.DONE Dolt updates to note that we don't actually need to pull this for use anymore
+6.DONE Clean up old files that aren't in use (xgboost, old visualization modules)

@@ -7,41 +7,32 @@ This repository is the capstone project for Data Science 4010 at Iowa State Univ
 - Emiliano Saucedo (Emilianosau28)
 
 ## Application
+
 Our dashboard can be found at [https://ds401-dern-volatility-dashboard.streamlit.app/](https://ds401-dern-volatility-dashboard.streamlit.app/)
 
 ## Folders
+
+Below are descriptions of all essential folders for this project. There are other folders in the repo, but if they are not listed here they are not required for the application.
+
 ### Data
+
 The data folder holds the raw data files for this project.
 This project relies on two dolt repos to supply the base data.
+You do not need to load the dolt repo, as we have generated parquet files that contain the same data, which can be found in the `parquet` subfolder.
+We also have a `models` subfolder which stores our trained and compressed LGBM models used for our predictions and visualization.
+For more information on our parquet split, we have [data/parquet/README.md](data/parquet/README.md).
+For more information on our LGBM model compression and formatting, we have [data/models/surface_lgbm/README.md](data/models/surface_lgbm/README.md).
+If you are interested in loading in the entire dolt repo, instructions can be found in [data/raw/README.md](data/raw/README.md).
+Data structure is further described in [data/raw/METADATA.md](data/raw/METADATA.md).
 
-Follow these steps to set up your local environment:
+### Dashboard
 
-1. **Install Dolt**  
-   Ensure that [Dolt](https://docs.dolthub.com/introduction/installation) is installed on your system. You can check your installation by running:
-   ```bash
-   dolt --version
-   ```
-   If Dolt isn’t installed, please follow the [installation instructions](https://docs.dolthub.com/introduction/installation) for your operating system.
+Contains our streamlit app files.
 
-2. **Clone the Repositories**  
-   - **Clone the `stocks` repository:**  
-     Run the following command to clone the **stocks** Dolt repository into `data/raw/stocks`:
-     ```bash
-     dolt clone https://www.dolthub.com/repositories/pcodexbro/stocks data/raw/stocks
-     ```
-   - **Clone the `options` repository:**  
-     Similarly, clone the **options** Dolt repository into `data/raw/options`:
-     ```bash
-     dolt clone https://www.dolthub.com/repositories/pcodexbro/options data/raw/options
-     ```
+### Notebooks
 
-3. **Verify the Clones**  
-   Confirm that the repositories have been cloned correctly by listing the contents of each directory:
-   ```bash
-   ls data/raw/stocks
-   ls data/raw/options
-   ```
+Contains a few different notebooks that were used throughout development. These notebooks are pretty messy and should not be seen as a usage guide for our application, as they contain some old module versions, were used for training the models, etc, but may be helpful to understand our development process.
 
-The structure of this data is described further in [data/raw/README.md](data/raw/README.md) and [data/raw/METADATA.md](data/raw/METADATA.md)
+### SRC
 
-From here, we will be building csv files through [src/data_collection/dolt_csv_export.py](src/data_collection/dolt_csv_export.py)
+Our source folder contains most of our main driver modules necessary for data extraction, transformation, loading, and model training. Specific READMEs can be found in each subfolder.
