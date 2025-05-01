@@ -35,4 +35,4 @@ Contains a few different notebooks that were used throughout development. These 
 
 ### [SRC](src/)
 
-Our source folder contains most of our main driver modules necessary for data extraction, transformation, loading, and model training. Specific READMEs can be found in each subfolder.
+Our source folder contains most of our main driver modules necessary for data extraction, transformation, loading, and model training. Specific READMEs can be found in each subfolder: [data_extraction](src/data_extraction/METADATA.md), [data_transformation](src/data_transformation/METADATA.md), and [data_modeling](src/data_modeling/METADATA.md).
