@@ -1,38 +1,63 @@
-This repository is the capstone project for Data Science 4010 at Iowa State University. In this repository we analyze and organize data from a Dolt repo with the intention of modeling and visualizing volatility.
+# DS 4010 Volatility Surface Capstone
+
+This repository contains the capstone project for Data Science 4010 at Iowa State University (Spring 2024). We analyze and organize financial data, primarily sourced from Dolt databases, to model and visualize stock volatility surfaces.
 
 ## Team Members
-- Ryan Freidhoff (RyanFreidhoff)
-- Nic Rhoads (nrhoads02)
-- Dakota Rossi (dakota-rossi)
-- Emiliano Saucedo (Emilianosau28)
 
-## Application
+* Ryan Freidhoff (RyanFreidhoff)
+* Nic Rhoads (nrhoads02)
+* Dakota Rossi (dakota-rossi)
+* Emiliano Saucedo (Emilianosau28)
 
-Our dashboard can be found at [https://ds401-dern-volatility-dashboard.streamlit.app/](https://ds401-dern-volatility-dashboard.streamlit.app/)
+## Application Dashboard
 
-## Folders
+Our interactive Streamlit dashboard demonstrating the volatility surface modeling can be accessed here:
+**[Volatility Dashboard](https://ds401-dern-volatility-dashboard.streamlit.app/)**
 
-Below are descriptions of all essential folders for this project. There are other folders in the repo, but if they are not listed here they are not required for the application.
+## Repository Structure
 
-### [Data](data/)
+Below are descriptions of the essential folders within this project. Other folders may exist but are not critical for the core application or data processing pipeline.
 
-The data folder holds the raw data files for this project.  
-This project relies on two dolt repos to supply the base data.  
-You do not need to load the dolt repo, as we have generated parquet files that contain the same data, which can be found in the `parquet` subfolder.  
-We also have a `models` subfolder which stores our trained and compressed LGBM models used for our predictions and visualization.  
-For more information on our parquet split, we have [data/parquet/README.md](data/parquet/README.md).  
-For more information on our LGBM model compression and formatting, we have [data/models/surface_lgbm/README.md](data/models/surface_lgbm/README.md).  
-If you are interested in loading in the entire dolt repo, instructions can be found in [data/raw/README.md](data/raw/README.md).  
-Data structure is further described in [data/raw/METADATA.md](data/raw/METADATA.md).  
+---
 
-### [Dashboard](dashboard/)
+### [`data/`](data/)
 
-Contains our streamlit app files.
+This directory houses all data used in the project.
 
-### [Notebooks](notebooks/)
+* **Source Data:** The project initially utilizes two Dolt repositories (`data/raw/stocks` and `data/raw/options`) as the primary data source.
+    * **Note:** Cloning and using the Dolt repositories directly is **not required** for most use cases.
+    * Instructions for Dolt setup (if desired): [`data/raw/README.md`](data/raw/README.md)
+    * Raw data schema details: [`data/raw/METADATA.md`](data/raw/METADATA.md)
+* **Processed Data (`data/parquet/`):** To facilitate efficient access and manage repository size, the core datasets (OHLCV, options chain, splits) have been converted to partitioned Parquet files. This is the **recommended** way to access the data.
+    * Details on Parquet structure and partitioning: [`data/parquet/README.md`](data/parquet/README.md)
+* **Models (`data/models/`):** Contains the pre-trained and compressed LightGBM models used for realized volatility predictions.
+    * Details on model structure and loading: [`data/models/README.md`](data/models/README.md)
 
-Contains a few different notebooks that were used throughout development. These notebooks are pretty messy and should not be seen as a usage guide for our application, as they contain some old module versions, were used for training the models, etc, but may be helpful to understand our development process.
+---
 
-### [SRC](src/)
+### [`dashboard/`](dashboard/)
 
-Our source folder contains most of our main driver modules necessary for data extraction, transformation, loading, and model training. Specific READMEs can be found in each subfolder: [data_extraction](src/data_extraction/METADATA.md), [data_transformation](src/data_transformation/METADATA.md), and [data_modeling](src/data_modeling/METADATA.md).
+Contains all necessary files for the Streamlit web application, including the main application script and supporting pages.
+
+---
+
+### [`notebooks/`](notebooks/)
+
+Includes Jupyter notebooks used during development for exploration, experimentation, model training, and testing.
+
+* **Note:** These notebooks may contain outdated code versions or complex procedures (like model training) and are primarily for understanding the development process, not as a direct usage guide for the final application or modules.
+
+---
+
+### [`src/`](src/)
+
+This is the main source code directory containing Python modules for the data pipeline and modeling.
+
+* **Data Extraction (`src/data_extraction/`):** Modules for extracting data from sources (Dolt, CSV) and loading the processed Parquet files.
+    * Details: [`src/data_extraction/README.md`](src/data_extraction/README.md)
+* **Data Transformation (`src/data_transformation/`):** Modules for cleaning data, performing split adjustments, calculating technical indicators, and joining auxiliary data.
+    * Details: [`src/data_transformation/README.md`](src/data_transformation/README.md)
+* **Data Modeling (`src/data_modeling/`):** Modules for training volatility models (LightGBM), generating predictions, analyzing option chain data, and visualizing volatility surfaces.
+    * Details: [`src/data_modeling/README.md`](src/data_modeling/README.md)
+
+---
