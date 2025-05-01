@@ -1,2 +1,2 @@
-Base dolt dbs should be in ./raw/  
-Data download instructions in [data/raw/README.md](data/raw/README.md)
+Base dolt dbs should be in [raw/](raw/)
+Data download instructions in (raw/README.md](raw/README.md)
