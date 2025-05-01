@@ -31,7 +31,7 @@ This directory houses all data used in the project.
 * **Processed Data (`data/parquet/`):** To facilitate efficient access and manage repository size, the core datasets (OHLCV, options chain, splits) have been converted to partitioned Parquet files. This is the **recommended** way to access the data.
     * Details on Parquet structure and partitioning: [`data/parquet/README.md`](data/parquet/README.md)
 * **Models (`data/models/`):** Contains the pre-trained and compressed LightGBM models used for realized volatility predictions.
-    * Details on model structure and loading: [`data/models/README.md`](data/models/README.md)
+    * Details on model structure and loading: [`data/models/surface_lgbm/README.md`](data/models/README.md)
 
 ---
 
