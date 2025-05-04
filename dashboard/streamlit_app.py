@@ -1254,7 +1254,7 @@ def main():
                     if not error_occurred and vis_mode != "Options Chain IV":
                          st.write("Loading LGBM Models...")
                          try:
-                            lgbm_models_dict = load_surface_models()
+                            lgbm_models_dict = load_surface_models(stock_symbol=stock)
                             if not lgbm_models_dict or 'models' not in lgbm_models_dict or not lgbm_models_dict['models']:
                                 raise ValueError("LGBM models dictionary is invalid or empty.")
                             st.write("LGBM Models loaded.")

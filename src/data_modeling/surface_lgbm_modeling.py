@@ -1,4 +1,4 @@
-# surface_lgbm_modeling.py
+# src/data_modeling/surface_lgbm_modeling.py
 # ---------------------------------------------------------------
 # Global LGBM realized‐volatility‐surface trainer
 # Trains one model per horizon with A/B stock split for cross-validation,
@@ -6,6 +6,7 @@
 # incorporates feature interactions with log-strike 'k',
 # weights samples based on 'k' magnitude, allows for extended training,
 # and leverages GPU if available.
+# Includes parallelized and selective model loading based on stock symbol.
 # ---------------------------------------------------------------
 
 import os
@@ -17,6 +18,8 @@ import datetime as _dt
 from typing import Dict, Any, List, Tuple, Union, Generator, Optional
 from collections import OrderedDict
 import tempfile
+import concurrent.futures # Added for parallel loading
+import time # Added for timing parallel loading
 
 import numpy as np
 import polars as pl
@@ -40,7 +43,7 @@ K_RANGE             = [-1, 1]       # Range for log-moneyness 'k'
 # weight = 1 + K_WEIGHT_FACTOR * abs(k)
 K_WEIGHT_FACTOR     = 20.0
 
-# --- Compression Configuration --- 
+# --- Compression Configuration ---
 COMPRESS_MODELS     = True          # Whether to compress model files
 COMPRESSION_LEVEL   = 9             # Zlib compression level (1-9)
 MAX_MODEL_SIZE_MB   = 100           # Compress models larger than this size (MB)
@@ -59,8 +62,8 @@ LGBM_PARAMS_GPU = {
     "boosting_type":  "gbdt",
     "device":         "gpu",
     "metric":         "rmse",
-    "learning_rate":  0.005, 
-    "num_leaves":     255, 
+    "learning_rate":  0.005,
+    "num_leaves":     255,
     "min_data_in_leaf": 50,
     "feature_fraction": 0.8,
     "bagging_fraction": 0.8,
@@ -70,7 +73,7 @@ LGBM_PARAMS_GPU = {
     "verbose":         -1
 }
 
-N_ESTIMATORS = 30000 
+N_ESTIMATORS = 30000
 EARLY_STOPPING_ROUNDS = 300
 
 # Set seed globally
@@ -114,12 +117,12 @@ def _to_date(x: Union[str, _dt.date, _dt.datetime, np.datetime64]) -> _dt.date:
 def _save_model(model: lgb.Booster, path: str, compress: bool = COMPRESS_MODELS) -> Tuple[str, float]:
     """
     Save LightGBM model, with optional compression.
-    
+
     Args:
         model: LightGBM Booster object
         path: Path to save the model
         compress: Whether to apply compression
-        
+
     Returns:
         Tuple of (final_path, size_mb)
     """
@@ -128,87 +131,105 @@ def _save_model(model: lgb.Booster, path: str, compress: bool = COMPRESS_MODELS)
         model.save_model(path)
         size_mb = os.path.getsize(path) / (1024 * 1024)
         return path, size_mb
-    
+
     # Try saving uncompressed first to a temporary file
     temp_dir = os.path.dirname(path)
     _ensure_dir(temp_dir)
-    temp_path = f"{path}.temp"
-    
+    temp_path = f"{path}.temp_save_{os.getpid()}_{np.random.randint(10000)}" # Unique temp path
+
     try:
         model.save_model(temp_path)
         size_mb = os.path.getsize(temp_path) / (1024 * 1024)
-        
+
         # Only compress if larger than MAX_MODEL_SIZE_MB
         if size_mb <= MAX_MODEL_SIZE_MB:
             # If under size limit, just rename to final path
+            if os.path.exists(path): os.remove(path) # Remove existing target if it exists
             os.rename(temp_path, path)
             return path, size_mb
-        
+
         # Compress the model
         with open(temp_path, 'rb') as f:
             model_data = f.read()
-        
+
         compressed_data = zlib.compress(model_data, level=COMPRESSION_LEVEL)
         compressed_path = f"{path}.z"
-        
+
         with open(compressed_path, 'wb') as f:
             f.write(compressed_data)
-        
+
         compressed_size_mb = os.path.getsize(compressed_path) / (1024 * 1024)
         logger.info(f"Model compressed: {size_mb:.2f}MB -> {compressed_size_mb:.2f}MB "
                    f"(ratio: {size_mb/compressed_size_mb:.2f}x)")
-        
+
         return compressed_path, compressed_size_mb
-    
+
     finally:
         # Clean up temp file
         if os.path.exists(temp_path):
-            os.remove(temp_path)
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass # May fail if rename succeeded
 
-def _load_model(path: str) -> Optional[lgb.Booster]:
+def _load_model_internal(path: str) -> Optional[lgb.Booster]:
     """
-    Load LightGBM model, handling both compressed and uncompressed formats.
-    
+    Internal function to load a single LightGBM model.
+    Handles both compressed (.lgb.z) and uncompressed (.lgb) formats.
+    Designed to be called by _load_single_model_worker or directly if needed.
+
     Args:
-        path: Path to the model file
-        
+        path: Base path to the model file (e.g., 'model.lgb').
+
     Returns:
-        LightGBM Booster or None if loading fails
+        LightGBM Booster or None if loading fails.
     """
     # Check for compressed version first
     compressed_path = f"{path}.z"
-    
+
     if os.path.exists(compressed_path):
+        logger.debug(f"Attempting to load compressed model: {compressed_path}")
+        temp_path = f"{path}.temp_load_{os.getpid()}_{np.random.randint(10000)}" # Unique temp path
         try:
             with open(compressed_path, 'rb') as f:
                 compressed_data = f.read()
-            
+
             # Decompress the data
             model_data = zlib.decompress(compressed_data)
-            
-            # Create a temporary file to use with LightGBM's loader
-            temp_path = f"{path}.temp"
+            logger.debug(f"Decompressed {compressed_path} ({len(model_data)} bytes)")
+
+            # Write decompressed data to a temporary file for LightGBM
             with open(temp_path, 'wb') as f:
                 f.write(model_data)
-            
-            try:
-                model = lgb.Booster(model_file=temp_path)
-                return model
-            finally:
-                # Clean up temporary file
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-                    
+
+            # Load from the temporary file
+            model = lgb.Booster(model_file=temp_path)
+            logger.debug(f"Successfully loaded model from temp file: {temp_path}")
+            return model
         except Exception as e:
             logger.error(f"Failed to load compressed model from {compressed_path}: {e}")
-    
+            return None # Fall through to try uncompressed
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass # Ignore errors during cleanup
+
     # Fall back to uncompressed version
     if os.path.exists(path):
+        logger.debug(f"Attempting to load uncompressed model: {path}")
         try:
-            return lgb.Booster(model_file=path)
+            model = lgb.Booster(model_file=path)
+            logger.debug(f"Successfully loaded uncompressed model: {path}")
+            return model
         except Exception as e:
             logger.error(f"Failed to load uncompressed model from {path}: {e}")
-    
+            return None
+
+    # If neither exists
+    logger.warning(f"Model file not found: neither {compressed_path} nor {path} exist.")
     return None
 
 # --- Updated LRU Cache to handle weights ---
@@ -674,15 +695,15 @@ def train_surface_models(
             logger.info(f"--- H{h}: Training Model A (Train: B, Test: A) ---")
             model_A, metrics_A = _train_single_model(
                 h, stocks_B, stocks_A, sd_paths, sm, final_feature_names, "Model A")
-            
+
             # Modified to use _save_model
             if model_A:
                 base_path = os.path.join(model_dir, f"h{h}_model_A.lgb")
                 saved_path, size_mb = _save_model(model_A, base_path)
-                result["models"][h]["A"] = model_A
+                result["models"][h]["A"] = model_A # Keep the model object temporarily
                 result["metrics"][h]["A"] = metrics_A
                 logger.info(f"H{h} Model A saved to {saved_path} ({size_mb:.2f} MB)")
-            else: 
+            else:
                 logger.error(f"H{h} Model A failed.")
 
             # Train/Eval Model B
@@ -690,15 +711,15 @@ def train_surface_models(
             mmap_cache.cache.clear(); gc.collect()
             model_B, metrics_B = _train_single_model(
                 h, stocks_A, stocks_B, sd_paths, sm, final_feature_names, "Model B")
-            
+
             # Modified to use _save_model
             if model_B:
                 base_path = os.path.join(model_dir, f"h{h}_model_B.lgb")
                 saved_path, size_mb = _save_model(model_B, base_path)
-                result["models"][h]["B"] = model_B
+                result["models"][h]["B"] = model_B # Keep the model object temporarily
                 result["metrics"][h]["B"] = metrics_B
                 logger.info(f"H{h} Model B saved to {saved_path} ({size_mb:.2f} MB)")
-            else: 
+            else:
                 logger.error(f"H{h} Model B failed.")
 
             # Average Metrics
@@ -715,20 +736,27 @@ def train_surface_models(
             result["metrics"][h]["avg"] = {"rmse": avg_rmse, "r2": avg_r2}
             logger.info(f"H{h}: Average Metrics - RMSE={avg_rmse:.4f}, R²={avg_r2:.4f}")
 
+            # Clear temporary model objects from result dict to avoid saving them in metadata
+            result["models"][h] = {}
             mmap_cache.cache.clear(); gc.collect()
     finally:
         logger.info("Cleaning up temporary data preparation directory...")
         _clean_dir(temp_root)
 
+    # Store metadata WITHOUT model objects
     metadata = { "horizons": HORIZONS, "feature_cols_by_h": result["feature_cols"],
                  "metrics": result["metrics"], "stocks": result["stocks"], "timestamp": ts,
-                 "compression": {"enabled": COMPRESS_MODELS, "level": COMPRESSION_LEVEL} }  # Add compression info
+                 "compression": {"enabled": COMPRESS_MODELS, "level": COMPRESSION_LEVEL} }
     try:
         joblib.dump(metadata, os.path.join(model_dir, "meta.joblib"))
         logger.info(f"Training complete. Models/metadata saved in {model_dir}")
     except Exception as e: logger.error(f"Failed to save metadata: {e}")
 
-    return result
+    # Clear temporary model keys from result before returning
+    result["models"] = {}
+
+    return result # Returns dict without model objects, only metadata
+
 
 # ────────────────────────────────────────────────────────────────
 # Find latest model (remains the same)
@@ -742,62 +770,153 @@ def find_latest_model() -> str:
     try: return max(model_dirs, key=os.path.getmtime)
     except Exception as e: raise IOError(f"Could not determine latest model directory in {MODEL_DIR}: {e}")
 
+
 # ────────────────────────────────────────────────────────────────
-# Load models (updated to handle compression)
+# Load models (PARALLELIZED & SELECTIVE VERSION)
 # ────────────────────────────────────────────────────────────────
-def load_surface_models(model_dir: str = None) -> Dict[str, Any]:
+def _load_single_model_worker(model_base_path: str, horizon: int, key: str) -> Tuple[int, str, Optional[lgb.Booster]]:
+    """
+    Worker function to load a single model (handles compression).
+    Designed to be called by ThreadPoolExecutor.
+
+    Args:
+        model_base_path: Base path (e.g., "h10_model_A.lgb").
+        horizon: Horizon number (e.g., 10).
+        key: Model key (e.g., "A").
+
+    Returns:
+        Tuple of (horizon, key, loaded_model or None).
+    """
+    logger.debug(f"Worker started for H={horizon}, Key={key}, Path={model_base_path}")
+    model = _load_model_internal(model_base_path)
+    if model is None:
+        logger.warning(f"Worker failed to load model for H={horizon}, Key={key}")
+    else:
+        logger.debug(f"Worker successfully loaded model for H={horizon}, Key={key}")
+    return horizon, key, model
+
+def load_surface_models(
+    model_dir: str = None,
+    stock_symbol: Optional[str] = None, # Added stock symbol argument
+    max_workers: Optional[int] = None
+    ) -> Dict[str, Any]:
     """
     Load pretrained surface models from disk using LightGBM's loader.
-    Handles both compressed (.lgb.z) and uncompressed (.lgb) formats.
+    Uses ThreadPoolExecutor for parallel loading and decompression.
+    If stock_symbol is provided, only loads the required A or B model per horizon.
 
     Args:
         model_dir: Specific model directory path. Loads latest if None.
+        stock_symbol: If provided, load only relevant A/B models for this stock.
+        max_workers: Max number of parallel workers. Defaults to os.cpu_count().
 
     Returns:
         Dictionary with models (Boosters) and metadata.
     """
+    start_time = time.time()
     if model_dir is None: model_dir = find_latest_model()
-    logger.info(f"Loading models from {model_dir}")
-    
-    if not os.path.isdir(model_dir): 
+    logger.info(f"Loading models from {model_dir}...")
+    if stock_symbol:
+        logger.info(f"Selectively loading models for stock: {stock_symbol}")
+    else:
+        logger.info("Loading all A/B models.")
+
+    if not os.path.isdir(model_dir):
         raise FileNotFoundError(f"Model directory not found: {model_dir}")
-    
+
     metadata_path = os.path.join(model_dir, "meta.joblib")
-    if not os.path.exists(metadata_path): 
+    if not os.path.exists(metadata_path):
         raise FileNotFoundError(f"Metadata file not found: {metadata_path}")
-    
-    try: 
+
+    try:
         metadata = joblib.load(metadata_path)
-    except Exception as e: 
+        stocks_split_info = metadata.get("stocks", {}) # Get A/B stock split info
+    except Exception as e:
         raise IOError(f"Failed to load metadata file {metadata_path}: {e}")
 
     horizons = metadata.get("horizons", HORIZONS)
     result = { "models": {}, "metrics": metadata.get("metrics", {}),
                "feature_cols": metadata.get("feature_cols_by_h", {}),
-               "stocks": metadata.get("stocks", {}), "model_dir": model_dir,
+               "stocks": stocks_split_info, # Keep the split info
+               "model_dir": model_dir,
                "timestamp": metadata.get("timestamp", "unknown"), "horizons": horizons }
 
+    tasks_to_submit = []
     for h in horizons:
-        result["models"][h] = {}
-        files_found = False
-        
-        for key in ["A", "B"]:
-            # Try loading with the new helper function
-            base_path = os.path.join(model_dir, f"h{h}_model_{key}.lgb")
-            model = _load_model(base_path)
-            
-            if model:
-                result["models"][h][key] = model
-                files_found = True
-                logger.debug(f"Loaded Model {key} for H={h}")
-            else:
-                logger.warning(f"Could not load model for H={h}, key={key}")
-        
-        if not files_found: 
-            logger.warning(f"No model files loaded for H={h}")
+        result["models"][h] = {} # Initialize horizon dict
+        keys_to_load = []
 
-    logger.info(f"Finished loading models for horizons: {list(result['models'].keys())}")
+        if stock_symbol:
+            # Determine which key ('A' or 'B') is needed for this stock and horizon
+            horizon_split = stocks_split_info.get(str(h), stocks_split_info.get(h)) # Handle int/str keys
+            required_key = None
+            fallback_key = 'A' # Default fallback if stock not found in split
+
+            if horizon_split:
+                if stock_symbol in horizon_split.get("A", []):
+                    required_key = "B" # If stock is in A group, use model B
+                elif stock_symbol in horizon_split.get("B", []):
+                    required_key = "A" # If stock is in B group, use model A
+
+            if required_key:
+                keys_to_load.append(required_key)
+                logger.debug(f"H={h}, Stock={stock_symbol}: Determined required model key: {required_key}")
+            else:
+                # Stock not found in split for this horizon, use fallback
+                keys_to_load.append(fallback_key)
+                logger.warning(f"H={h}, Stock={stock_symbol}: Not found in A/B split. Falling back to load model key: {fallback_key}")
+        else:
+            # Load all models if no specific stock is given
+            keys_to_load.extend(["A", "B"])
+
+        # Add tasks for the determined keys
+        for key in keys_to_load:
+            base_path = os.path.join(model_dir, f"h{h}_model_{key}.lgb")
+            # Check if either compressed or uncompressed exists before adding task
+            compressed_path = f"{base_path}.z"
+            if os.path.exists(compressed_path) or os.path.exists(base_path):
+                tasks_to_submit.append((base_path, h, key))
+            else:
+                 logger.warning(f"Model file for H={h}, Key={key} not found (neither .lgb nor .lgb.z). Skipping.")
+
+
+    if not tasks_to_submit:
+        logger.warning("No model files identified for loading.")
+        return result
+
+    successful_loads = 0
+    failed_loads = 0
+    # Use ThreadPoolExecutor for parallel I/O and decompression
+    # Adjust worker count based on potentially fewer tasks
+    num_workers = max_workers if max_workers is not None else min(len(tasks_to_submit), os.cpu_count() or 1)
+    logger.info(f"Submitting {len(tasks_to_submit)} model loading tasks to {num_workers} workers...")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
+        future_to_task = {executor.submit(_load_single_model_worker, path, h, key): (h, key) for path, h, key in tasks_to_submit}
+
+        for future in concurrent.futures.as_completed(future_to_task):
+            h, key = future_to_task[future]
+            try:
+                _, _, model = future.result() # Unpack result from worker
+                if model:
+                    result["models"][h][key] = model
+                    successful_loads += 1
+                else:
+                    failed_loads += 1
+                    # Ensure the dict entry exists even if loading failed
+                    if h not in result["models"]: result["models"][h] = {}
+                    result["models"][h][key] = None # Mark as None if failed
+            except Exception as exc:
+                logger.error(f"Task for H={h}, Key={key} generated an exception: {exc}")
+                failed_loads += 1
+                if h not in result["models"]: result["models"][h] = {}
+                result["models"][h][key] = None # Mark as None if exception
+
+    end_time = time.time()
+    logger.info(f"Finished loading models in {end_time - start_time:.2f} seconds. "
+                f"Successful: {successful_loads}, Failed: {failed_loads}")
     return result
+
 
 # ────────────────────────────────────────────────────────────────
 # Predict surface (remains the same, uses features from loaded model)
@@ -824,12 +943,12 @@ def predict_surface(
     Returns:
         Tuple (K_mesh, T_mesh, Z) or None if prediction fails.
     """
-    models_by_h = model_dict["models"]
+    models_by_h = model_dict.get("models", {}) # Use .get for safety
     stocks_by_h = model_dict.get("stocks", {})
     feature_cols_by_h = model_dict.get("feature_cols", {})
     horizons = sorted(models_by_h.keys())
 
-    if not horizons: logger.error("Predict: No valid models/horizons found"); return None
+    if not horizons: logger.error("Predict: No valid models/horizons found in model_dict"); return None
 
     td = _to_date(trade_date)
     today_df = df.filter( (pl.col("act_symbol") == stock) & (pl.col("date").cast(pl.Date) == td) ).head(1)
@@ -847,15 +966,29 @@ def predict_surface(
         Tcal = int(round(h * 7/5)); T_cal_list.append(Tcal)
 
         model_key = None # Determine A or B model
-        if h in stocks_by_h:
-            if stock in stocks_by_h[h].get("A", []): model_key = "B"
-            elif stock in stocks_by_h[h].get("B", []): model_key = "A"
-        if model_key is None or model_key not in models_by_h.get(h, {}) or models_by_h[h][model_key] is None:
-             valid_keys = [k for k, m in models_by_h.get(h, {}).items() if m is not None]
-             if not valid_keys: logger.warning(f"Predict: No valid model for H={h}. Skip."); continue
-             model_key = valid_keys[0]; logger.warning(f"Predict: Unknown group/model for {stock}/H={h}. Fallback: {model_key}.")
+        horizon_split = stocks_by_h.get(str(h), stocks_by_h.get(h)) # Handle int/str keys
+        if horizon_split:
+            if stock in horizon_split.get("A", []):
+                model_key = "B"
+            elif stock in horizon_split.get("B", []):
+                model_key = "A"
 
-        model = models_by_h[h][model_key]
+        # Ensure the determined model key is actually loaded and valid
+        if model_key is None or model_key not in models_by_h.get(h, {}) or models_by_h[h][model_key] is None:
+             # Fallback logic: Find the first valid model key that *is* loaded for this horizon
+             loaded_models_for_h = models_by_h.get(h, {})
+             valid_loaded_keys = [k for k, m in loaded_models_for_h.items() if m is not None]
+
+             if not valid_loaded_keys:
+                 logger.warning(f"Predict: No valid *loaded* models found for H={h}. Skip horizon.")
+                 continue # Skip this horizon if no models are loaded/valid
+
+             model_key = valid_loaded_keys[0] # Use the key of the first valid loaded model
+             model = loaded_models_for_h[model_key] # Use the model itself
+             logger.warning(f"Predict: Required model key undetermined or model not loaded for {stock}/H={h}. Fallback: using loaded Model {model_key}.")
+        else:
+            model = models_by_h[h][model_key] # Get the designated model
+
         feature_names = feature_cols_by_h.get(h) # Full list model expects
         if not feature_names: logger.warning(f"Predict: No feature names for H={h}. Skip."); continue
         feat_len = len(feature_names); logger.debug(f"Predict: Using Model {model_key} for H={h} ({feat_len} features).")
