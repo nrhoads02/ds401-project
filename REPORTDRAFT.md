@@ -6,6 +6,42 @@
 
 **Repository Link:** [GitHub Repository](https://github.com/nrhoads02/ds401-project)
 
+## Table of Contents
+
+1. [Application Goal](#1-application-goal)  
+   1.1 [Project Objective](#11-project-objective)  
+   1.2 [Motivation and Target Audience](#12-motivation-and-target-audience)
+
+2. [Data Pipeline (The Backend)](#2-data-pipeline-the-backend)  
+   2.1 [Data Collection (ETL)](#21-data-collection-etl)  
+   2.1.1 [Data Sources](#211-data-sources)  
+   2.1.2 [Data Acquisition](#212-data-acquisition)  
+   2.1.3 [Data Cleaning and Preprocessing](#213-data-cleaning-and-preprocessing)  
+   2.1.4 [Data Transformation](#214-data-transformation)  
+   2.1.5 [Data Storage for Dashboard](#215-data-storage-for-dashboard)  
+   2.2 [Modeling](#22-modeling)  
+   2.2.1 [Modeling Goal and Purpose](#221-modeling-goal-and-purpose)  
+   2.2.2 [Investigated Approaches (Not Used)](#222-investigated-approaches-not-used)  
+   2.2.3 [Final Model: LightGBM for Conditional Realized Volatility](#223-final-model-lightgbm-for-conditional-realized-volatility)  
+   2.3 [Dashboard Construction](#23-dashboard-construction)  
+   2.3.1 [Technology](#231-technology)  
+   2.3.2 [Layout and Logic](#232-layout-and-logic)  
+   2.3.3 [User Inputs](#233-user-inputs)  
+   2.3.4 [Outputs](#234-outputs)  
+   2.3.5 [Technology Assessment](#235-technology-assessment)
+
+3. [Application Learning](#3-application-learning)  
+   3.1 [Key Learnings](#31-key-learnings)  
+   3.2 [Choices Made](#32-choices-made)  
+   3.3 [Model Support for Goals](#33-model-support-for-goals)
+
+4. [Discussion](#4-discussion)  
+   4.1 [Project Summary](#41-project-summary)  
+   4.2 [Next Steps](#42-next-steps)  
+   4.3 [Unique Aspects](#43-unique-aspects)  
+   4.4 [Limitations](#44-limitations)  
+   4.5 [Availability](#45-availability)
+
 ## 1. Application Goal
 
 ### 1.1. Project Objective
@@ -116,11 +152,10 @@ This predicted surface ( $\sigma_{LGBM}(K, T)$ ) serves multiple purposes in the
   * Trained LightGBM boosters are saved to disk, compressed using `zlib` (`.lgb.z`) to ensure files remain within GitHub size restraints.
   * Models and metadata are stored in dated subdirectories within [`data/models/surface_lgbm/`](data/models/surface_lgbm/).
   * The application loads the required pre-trained models using parallel processing.
-* **Model Results:**
-  * 6 Hour training time with complete data and stride of 1.
-  * RMSE hovers around 0.3 to 0.4 depending on the horizon.
-  * $R^2$ is consistently above 0.5.
-  * $k$-related features were less important than expected, making 'smiles' and 'skews' very flat.
+* **Model Performance:**
+  * Training on the full dataset with a stride of 1 took approximately 6 hours.
+  * Across horizons, RMSE ranged from 0.3 to 0.4, and $R^2$ consistently exceeded 0.5.
+  * Notably, $k$-related features were less important than anticipated, resulting in flatter volatility smiles and skews than expected.
 
 ### 2.3. Dashboard Construction
 
@@ -168,9 +203,9 @@ Outputs update dynamically based on user selections.
 
 ### 3.1. Key Learnings
 
-* **Volatility Dynamics:** We had to dive into finance research to find the best approaches available for volatility modeling considering our data constraints. We gained insight into volatility smile/skew generation by comparing our various model predictions with options market implied volatility. Differences highlighted potential model disagreements or market inefficiencies.
+* **Volatility Dynamics:** We had to dive into finance research to find the best approaches available for volatility modeling given our data constraints. We gained insight into volatility smile/skew generation by comparing our various model predictions with options market implied volatility. Differences highlighted potential model disagreements or market inefficiencies.
 * **Modeling Challenges:** Predicting future RV is complex. Feature engineering (esp. log-moneyness $k$ and interactions) and sample weighting were vital. High accuracy across all market conditions remains very challenging and we were unable to evaluate out-of-sample performance on truly forward data due to the dataset's historical cutoff, limiting our ability to validate the model's robustness over future market conditions.
-* **Data Handling is Crucial:** The project displays the engineering effort needed for large financial datasets. Hosting our dataset on dolt, using efficient libraries like Polars, and utilizing our partitioned Parquet strategy was essential for efficient dashboarding.
+* **Data Handling is Crucial:** The project demonstrated the engineering effort needed for large financial datasets. Hosting our dataset on dolt, using efficient libraries like Polars, and utilizing our partitioned Parquet strategy was essential for efficient dashboarding.
 * **Model vs. Market:** The basic trading simulation showed how model-market discrepancies between predicted RV and market IV could translate into pricing differences when applied in the BSM framework. While not a full trading system, this demonstrated how volatility modeling can serve as a proxy for identifying potentially mispriced options.
 
 ### 3.2. Choices Made
