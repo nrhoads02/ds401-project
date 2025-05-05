@@ -116,6 +116,11 @@ This predicted surface ( $\sigma_{LGBM}(K, T)$ ) serves multiple purposes in the
   * Trained LightGBM boosters are saved to disk, compressed using `zlib` (`.lgb.z`) to ensure files remain within GitHub size restraints.
   * Models and metadata are stored in dated subdirectories within [`data/models/surface_lgbm/`](data/models/surface_lgbm/).
   * The application loads the required pre-trained models using parallel processing.
+* **Model Results:**
+  * 6 Hour training time with complete data and stride of 1.
+  * RMSE hovers around 0.3 to 0.4 depending on the horizon.
+  * $R^2$ is consistently above 0.5.
+  * $k$-related features were less important than expected, making 'smiles' and 'skews' very flat.
 
 ### 2.3. Dashboard Construction
 
@@ -163,10 +168,10 @@ Outputs update dynamically based on user selections.
 
 ### 3.1. Key Learnings
 
-* **Volatility Dynamics:** Gained deeper insight into the volatility smile/skew by comparing model predictions (RV) with market expectations (IV). Differences highlighted potential model disagreements or market inefficiencies.
-* **Modeling Challenges:** Predicting future RV is complex. Feature engineering (esp. log-moneyness $k$ and interactions) and sample weighting were vital. High accuracy across all conditions remains challenging.
-* **Data Handling is Crucial:** The project underscored the engineering effort needed for large financial datasets. The partitioned Parquet strategy was essential for dashboard feasibility. Efficient libraries like Polars were key.
-* **Model vs. Market:** The basic trading simulation showed how model-market discrepancies *could* be traded, but also emphasized that profitability depends on the model's accuracy and actual market movements, not just the predicted difference.
+* **Volatility Dynamics:** We had to dive into finance research to find the best approaches available for volatility modeling considering our data constraints. We gained insight into volatility smile/skew generation by comparing our various model predictions with options market implied volatility. Differences highlighted potential model disagreements or market inefficiencies.
+* **Modeling Challenges:** Predicting future RV is complex. Feature engineering (esp. log-moneyness $k$ and interactions) and sample weighting were vital. High accuracy across all market conditions remains very challenging and we were unable to evaluate out-of-sample performance on truly forward data due to the dataset's historical cutoff, limiting our ability to validate the model's robustness over future market conditions.
+* **Data Handling is Crucial:** The project displays the engineering effort needed for large financial datasets. Hosting our dataset on dolt, using efficient libraries like Polars, and utilizing our partitioned Parquet strategy was essential for efficient dashboarding.
+* **Model vs. Market:** The basic trading simulation showed how model-market discrepancies between predicted RV and market IV could translate into pricing differences when applied in the BSM framework. While not a full trading system, this demonstrated how volatility modeling can serve as a proxy for identifying potentially mispriced options.
 
 ### 3.2. Choices Made
 
@@ -192,7 +197,7 @@ Potential future improvements include:
 
 * **More Sophisticated Models:** Explore deep learning architectures (Transformers, TFT, NBEATS), advanced financial volatility models (Heston, SABR), and ticker-specific volatility models like GARCH, either as features or as an alternative to our LightGBM model.
 * **Data Enhancements:** Incorporate higher-frequency data or alternative data sources (sentiment, macro indicators, news articles).
-* **Improved User Experience:** Add more interactivity (point-and-click details, model explanations), side-by-side comparisons, and more realistic trading simulation options.
+* **Improved User Experience:** Add more interactivity, side-by-side comparisons, and more realistic trading simulation options. We would love to create more views that users could interact with, potentially built for portfolio management or statistical arbitrage trading styles.
 * **Refine Surface Generation:** Investigate advanced interpolation or fitting techniques for smoother and more robust surface generation, especially from potentially sparse options data.
 
 ### 4.3. Unique Aspects
@@ -201,7 +206,14 @@ Potential future improvements include:
 * **Conditional Volatility Modeling:** Using ML to model volatility conditional on future log-moneyness ($k$) from widely accessible OHLCV data (as opposed to expensive data from options markets).
 * **Comprehensive User Experience:** Users can visualize and interact with multiple kinds of volatility surfaces, derivative pricing estimations, and trading simulations.
 
-### 4.4. Availability
+### 4.4. Limitations
+
+* **Forward Testing Constraints:** We were unable to evaluate out-of-sample performance on truly forward data due to the dataset's historical cutoff, limiting our ability to validate the model's robustness under future market conditions.
+* **Market Noise in IV Data:** Implied volatility data derived from options markets is itself noisy and model-dependent, introducing ambiguity when comparing it to realized volatility predictions.
+* **Model Simplifications:** Our approach does not incorporate key forward-looking events like earnings announcements, macroeconomic releases, or geopolitical risk, which may significantly impact realized volatility.
+* **No Transaction Cost Modeling:** Our basic trading simulation does not account for transaction costs, liquidity constraints, or execution slippage, which would be critical in any real-world implementation.
+
+### 4.5. Availability
 
 * **Code:** The complete source code is available in this GitHub repository: [GitHub Repository](https://github.com/nrhoads02/ds401-project)
 * **Dashboard:** The live dashboard is hosted on Streamlit Community Cloud: [Volatility Dashboard](https://ds401-dern-volatility-dashboard.streamlit.app/)
