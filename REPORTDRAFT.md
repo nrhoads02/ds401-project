@@ -2,10 +2,6 @@
 
 **Team:** DERN (Ryan Freidhoff, Nic Rhoads, Dakota Rossi, Emiliano Saucedo)
 
-**Date:** May 4, 2025
-
-**Intended Audience:** New students in DS 4010
-
 **Dashboard Link:** [Volatility Dashboard](https://ds401-dern-volatility-dashboard.streamlit.app/)
 
 **Repository Link:** [GitHub Repository](https://github.com/nrhoads02/ds401-project)
