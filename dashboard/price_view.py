@@ -185,7 +185,7 @@ def create_price_heatmap(
     fig.add_trace(go.Heatmap(
         z=price_Z, x=K_mesh[0, :], y=T_mesh[:, 0], colorscale=colorscale,
         colorbar=dict(title=colorbar_title, thickness=15), zmin=zmin, zmax=zmax,
-        text=text_labels, texttemplate="%{text}", textfont={"size": 10, "color": "white"},
+        text=text_labels, texttemplate="%{text}", textfont={"size": 14, "color": "white"},
         customdata=np.dstack((K_mesh, T_mesh)),
         hovertemplate=("<b>Price Details</b><br>K: $%{customdata[0]:.2f}<br>T: %{customdata[1]:.0f}d<br>"
                        "Price: $%{z:.4f}<extra></extra>"),
@@ -208,13 +208,13 @@ def create_price_heatmap(
              if len(line_T_p) > 1:
                  fig.add_trace(go.Scatter(x=line_K_p, y=line_T_p, mode='lines', line=dict(color='white', width=3, dash='dash'), name='Actual ITM/OTM Boundary', hoverinfo='skip'))
                  anno_text = "Right: ITM<br>Left: OTM" if option_type=='call' else "Left: ITM<br>Right: OTM"
-                 fig.add_annotation(x=0.95, y=0.05, xref="paper", yref="paper", text=anno_text, showarrow=False, font=dict(color="white", size=10), bgcolor="rgba(0,0,0,0.5)", bordercolor="white", borderwidth=1)
+                 fig.add_annotation(x=0.95, y=0.05, xref="paper", yref="paper", text=anno_text, showarrow=False, font=dict(color="white", size=14), bgcolor="rgba(0,0,0,0.5)", bordercolor="white", borderwidth=1)
              # No warning if not plotted, just silently omit
         # No warning if data invalid, just silently omit
 
     # --- Final Figure Layout ---
     fig.update_layout(title=title, xaxis_title="Strike Price (K, $)", yaxis_title="Days to Expiration (T)",
-                      yaxis_autorange='reversed', width=None, height=600, legend=dict(yanchor="top", y=0.99, xanchor="right", x=0.99, bgcolor='rgba(255,255,255,0.6)'))
+                      yaxis_autorange='reversed', width=None, height=600, legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01, bgcolor='rgba(0,0,0,0.8)'))
     fig.update_xaxes(range=[k_min_render, k_max_render])
     fig.update_yaxes(range=[t_max_render, t_min_render]) # Reversed T range
 
@@ -274,31 +274,33 @@ def simulate_trading_strategy(
 ) -> Optional[Dict[str, Any]]:
     """
     Simulates trading based on model vs market price differences within a strike range.
-    Returns statistics and a grid of trade actions.
+    Returns statistics and grids of trade actions, win/loss status, and P&L.
     """
     # --- Input Validation ---
     if not lgbm_price_surface or not market_price_surface: return None
     if S0 is None or not np.isfinite(S0) or S0 <= 0: return None
     boundary_available = itm_otm_boundary_data is not None
-    if not boundary_available: logger.warning("Sim: Boundary data missing, P&L calculation skipped.")
+    if not boundary_available: logger.warning("Sim: Boundary data missing, P&L and Win/Loss calculation skipped.")
 
     K_mesh, T_mesh, lgbm_price_Z = lgbm_price_surface
     _, _, market_price_Z = market_price_surface # Assumes same grid
     boundary_T, boundary_K_actual = itm_otm_boundary_data if boundary_available else (None, None)
 
     if not (K_mesh.shape == T_mesh.shape == lgbm_price_Z.shape == market_price_Z.shape): return None
-    if boundary_available and len(boundary_T) != len(boundary_K_actual): return None
+    if boundary_available and boundary_T is not None and boundary_K_actual is not None and len(boundary_T) != len(boundary_K_actual): return None
 
     # --- Setup Simulation ---
     total_profit, long_profit, short_profit = 0.0, 0.0, 0.0
     long_wins, short_wins, long_trades, short_trades = 0, 0, 0, 0
     skipped_strike_range, skipped_no_boundary = 0, 0
-    trade_action_grid = np.zeros_like(K_mesh, dtype=int) # Grid for trade actions
+    trade_action_grid = np.zeros_like(K_mesh, dtype=int) # Grid for trade actions (1=Buy, -1=Sell, 0=None)
+    trade_pnl_grid = np.full_like(K_mesh, np.nan, dtype=float) # Grid for P&L per trade
+    trade_win_loss_grid = np.zeros_like(K_mesh, dtype=int) # Grid for win/loss status (1=Win, -1=Loss, 0=None/Unknown)
     min_k_trade, max_k_trade = S0 * (1.0 - strike_padding), S0 * (1.0 + strike_padding) # K filter range
 
     # --- Create Boundary Interpolation Function ---
     boundary_interp = None
-    if boundary_available and len(boundary_T) >= 2:
+    if boundary_available and boundary_T is not None and boundary_K_actual is not None and len(boundary_T) >= 2:
         sort_idx = np.argsort(boundary_T)
         boundary_T_s, boundary_K_s = boundary_T[sort_idx], boundary_K_actual[sort_idx]
         try: # Use linear interpolation, fill with edge values outside range
@@ -325,7 +327,7 @@ def simulate_trading_strategy(
             elif lgbm_p < mkt_p * (1.0 - mispricing_threshold): trade_action_num = -1; short_trades += 1
             trade_action_grid[i, j] = trade_action_num # Store action in grid
 
-            # Calculate P&L if trade occurred and boundary is usable
+            # Calculate P&L and Win/Loss if trade occurred and boundary is usable
             if trade_action_num != 0 and boundary_interp:
                  actual_K_at_T = np.nan
                  try:
@@ -336,12 +338,21 @@ def simulate_trading_strategy(
                  if np.isfinite(actual_K_at_T): # Proceed if actual K found
                      intrinsic = max(0.0, actual_K_at_T - K) if option_type=='call' else max(0.0, K - actual_K_at_T)
                      profit = (intrinsic - mkt_p) if trade_action_num == 1 else (mkt_p - intrinsic)
-                     total_profit += profit
-                     if trade_action_num == 1: long_profit += profit; long_wins += (profit > 0)
-                     else: short_profit += profit; short_wins += (profit > 0)
-            elif trade_action_num != 0: # Trade occurred but boundary unavailable
-                 skipped_no_boundary +=1
+                     trade_pnl_grid[i, j] = profit # Store P&L
+                     trade_win_loss_grid[i, j] = 1 if profit > 0 else -1 # Store Win/Loss status
 
+                     total_profit += profit
+                     if trade_action_num == 1:
+                         long_profit += profit
+                         if profit > 0: long_wins += 1
+                     else:
+                         short_profit += profit
+                         if profit > 0: short_wins += 1
+                 # else: # If boundary interp failed for this point, P&L is NaN, Win/Loss is 0 (already initialized)
+                 #    skipped_no_boundary +=1 # Count here or earlier? Counted earlier.
+            elif trade_action_num != 0: # Trade occurred but boundary unavailable or interp failed
+                 skipped_no_boundary +=1
+                 # P&L remains NaN, Win/Loss remains 0
 
     # --- Compile Results ---
     total_sim_trades = long_trades + short_trades
@@ -353,24 +364,35 @@ def simulate_trading_strategy(
         "short_trades": short_trades, "short_profit": short_profit, "short_wins": short_wins,
         "short_win_rate": short_wins / short_trades if short_trades > 0 else 0,
         "skipped_strike_range": skipped_strike_range, "skipped_no_boundary": skipped_no_boundary,
-        "strike_range_used": (min_k_trade, max_k_trade), "trade_action_grid": trade_action_grid
+        "strike_range_used": (min_k_trade, max_k_trade),
+        "trade_action_grid": trade_action_grid,
+        "trade_pnl_grid": trade_pnl_grid, # Add P&L grid to results
+        "trade_win_loss_grid": trade_win_loss_grid # Add Win/Loss grid to results
     }
     return results
 
 
 def create_trade_heatmap(
-    trade_action_grid: np.ndarray, K_mesh: np.ndarray, T_mesh: np.ndarray, title: str, S0: float,
+    trade_action_grid: np.ndarray,
+    trade_pnl_grid: np.ndarray,
+    trade_win_loss_grid: np.ndarray,
+    K_mesh: np.ndarray, T_mesh: np.ndarray, title: str, S0: float,
     realized_points_data: Optional[Tuple] = None, consider_realized_for_axis: bool = False,
     sim_k_range: Optional[Tuple[float, float]] = None
 ) -> go.Figure:
     """
-    Creates a 2D Plotly heatmap visualizing simulated trade actions (Buy/Sell/None), with S0 line.
+    Creates a 2D Plotly heatmap visualizing simulated trades using:
+    - Color gradient based on P&L (profit/loss amount)
+    - Symbols overlay for trade direction (buy/sell)
+    - Additional hover information showing complete trade details
     """
     fig = go.Figure()
 
     # --- Input Validation ---
-    if trade_action_grid is None or K_mesh is None or T_mesh is None or \
-       trade_action_grid.shape != K_mesh.shape or trade_action_grid.shape != T_mesh.shape:
+    if trade_action_grid is None or trade_pnl_grid is None or trade_win_loss_grid is None or \
+       K_mesh is None or T_mesh is None or \
+       trade_action_grid.shape != K_mesh.shape or trade_pnl_grid.shape != K_mesh.shape or \
+       trade_win_loss_grid.shape != K_mesh.shape or K_mesh.shape != T_mesh.shape:
         logger.warning(f"Cannot create trade heatmap '{title}': Invalid data/shapes.")
         fig.update_layout(title=f"{title} (Data Error)"); return fig
 
@@ -378,19 +400,119 @@ def create_trade_heatmap(
     k_min_render, k_max_render, t_min_render, t_max_render = _calculate_dynamic_axis_range(
         S0, K_mesh, T_mesh, realized_points_data, consider_realized_for_axis, sim_k_range
     )
+    
+    # --- Calculate PnL Min/Max for consistent color scaling ---
+    # Find min/max P&L for executed trades only (trade_action_grid != 0)
+    valid_pnl_mask = (trade_action_grid != 0) & np.isfinite(trade_pnl_grid)
+    if np.any(valid_pnl_mask):
+        pnl_values = trade_pnl_grid[valid_pnl_mask]
+        pnl_min, pnl_max = np.min(pnl_values), np.max(pnl_values)
+        # Ensure symmetrical color scale if both profits and losses exist
+        if pnl_min < 0 and pnl_max > 0:
+            pnl_abs_max = max(abs(pnl_min), abs(pnl_max))
+            pnl_min, pnl_max = -pnl_abs_max, pnl_abs_max
+        # Handle edge cases
+        if pnl_min == pnl_max:
+            if pnl_min == 0:
+                pnl_min, pnl_max = -0.1, 0.1  # Small range around zero
+            else:
+                pnl_max = pnl_min * 1.1 if pnl_min > 0 else pnl_min * 0.9
+    else:
+        # Default range if no valid P&L values
+        pnl_min, pnl_max = -1, 1
 
-    # --- Heatmap Trace ---
-    action_text_map = {1: "Buy", -1: "Sell", 0: "No Trade"} # Map numbers to text
-    hover_text_labels = np.array([[action_text_map.get(action, "N/A") for action in row] for row in trade_action_grid])
+    # --- Create a masked P&L grid for coloring (only for executed trades) ---
+    masked_pnl_grid = np.full_like(trade_pnl_grid, np.nan)
+    masked_pnl_grid[valid_pnl_mask] = trade_pnl_grid[valid_pnl_mask]
+
+    # --- Map Data for Visualization ---
+    # Map trade actions to text descriptions and symbols
+    action_map = {1: "Buy", -1: "Sell", 0: "No Trade"}
+    action_text_grid = np.array([[action_map.get(action, "N/A") for action in row] for row in trade_action_grid])
+
+    # Map win/loss status to text descriptions
+    win_loss_map = {1: "Win", -1: "Loss", 0: "No Trade / Unknown"}
+    win_loss_text_grid = np.array([[win_loss_map.get(wl, "N/A") for wl in row] for row in trade_win_loss_grid])
+
+    # Format P&L grid for display
+    pnl_text_grid = np.array([[f"${pnl:+.2f}" if np.isfinite(pnl) else "N/A" for pnl in row] for row in trade_pnl_grid])
+
+    # --- Heatmap Trace for P&L Coloring ---
+    # Use a diverging colorscale with red for losses and green for profits
+    colorscale_pnl = [
+        [0.0, 'rgb(178, 24, 43)'],   # Dark red for largest losses
+        [0.25, 'rgb(239, 138, 98)'],  # Light red for small losses
+        [0.5, 'rgb(247, 247, 247)'],  # White for break-even
+        [0.75, 'rgb(103, 169, 103)'], # Light green for small profits
+        [1.0, 'rgb(27, 120, 55)']     # Dark green for largest profits
+    ]
+
     fig.add_trace(go.Heatmap(
-        z=trade_action_grid, x=K_mesh[0, :], y=T_mesh[:, 0],
-        colorscale='RdBu', zmid=0, zmin=-1, zmax=1, # Diverging Red(-1)/Blue(+1) scale
-        colorbar=dict(title='Trade Action', tickvals=[-1, 0, 1], ticktext=['Sell', 'None', 'Buy'], thickness=15),
-        customdata=np.dstack((K_mesh, T_mesh, hover_text_labels)),
-        hovertemplate=("<b>Trade Simulation</b><br>K: $%{customdata[0]:.2f}<br>T: %{customdata[1]:.0f}d<br>"
-                       "Action: %{customdata[2]}<extra></extra>"),
-        hoverongaps=False
+        z=masked_pnl_grid, x=K_mesh[0, :], y=T_mesh[:, 0],
+        colorscale=colorscale_pnl, zmid=0, zmin=pnl_min, zmax=pnl_max,
+        colorbar=dict(title='P&L ($)', thickness=15),
+        opacity=0.8,  # Slightly transparent to better show symbols overlay
+        customdata=np.dstack(( action_text_grid,K_mesh, T_mesh, win_loss_text_grid, pnl_text_grid, trade_action_grid)),
+        hovertemplate=(
+            "<b>%{customdata[0]} Trade</b><br>"
+            "K: $%{customdata[1]:.2f}<br>"
+            "T: %{customdata[2]:.0f}d<br>"
+            "Outcome: %{customdata[3]}<br>"
+            "P&L: %{customdata[4]}"
+            "<extra></extra>"
+        ),
+        hoverongaps=False,
+        name='P&L'
     ))
+
+    # --- Add Buy/Sell Symbols Overlay ---
+    # Extract points for Buy trades (trade_action_grid == 1)
+    buy_mask = (trade_action_grid == 1) & np.isfinite(K_mesh) & np.isfinite(T_mesh)
+    if np.any(buy_mask):
+        buy_K = K_mesh[buy_mask]
+        buy_T = T_mesh[buy_mask]
+        buy_pnl = trade_pnl_grid[buy_mask]
+        buy_outcome = trade_win_loss_grid[buy_mask]
+        
+        buy_text = np.array(["▲" for _ in range(len(buy_K))])  # Triangle up for buys
+        buy_custom = np.column_stack((
+            buy_K, buy_T,
+            np.array(["Buy" for _ in range(len(buy_K))]),
+            np.array([win_loss_map.get(o, "N/A") for o in buy_outcome]),
+            np.array([f"${p:+.2f}" if np.isfinite(p) else "N/A" for p in buy_pnl])
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=buy_K, y=buy_T, mode='text',
+            text=buy_text, textfont=dict(size=18, color='white'),
+            customdata=buy_custom,
+            name='Buy',
+            hoverinfo='skip'
+        ))
+
+    # Extract points for Sell trades (trade_action_grid == -1)
+    sell_mask = (trade_action_grid == -1) & np.isfinite(K_mesh) & np.isfinite(T_mesh)
+    if np.any(sell_mask):
+        sell_K = K_mesh[sell_mask]
+        sell_T = T_mesh[sell_mask]
+        sell_pnl = trade_pnl_grid[sell_mask]
+        sell_outcome = trade_win_loss_grid[sell_mask]
+        
+        sell_text = np.array(["▼" for _ in range(len(sell_K))])  # Triangle down for sells
+        sell_custom = np.column_stack((
+            sell_K, sell_T,
+            np.array(["Sell" for _ in range(len(sell_K))]),
+            np.array([win_loss_map.get(o, "N/A") for o in sell_outcome]),
+            np.array([f"${p:+.2f}" if np.isfinite(p) else "N/A" for p in sell_pnl])
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=sell_K, y=sell_T, mode='text',
+            text=sell_text, textfont=dict(size=18, color='white'),
+            customdata=sell_custom,
+            name='Sell',
+            hoverinfo='skip'
+        ))
 
     # --- Add Vertical Line for Spot Price (S0) ---
     if S0 and np.isfinite(S0):
@@ -400,8 +522,14 @@ def create_trade_heatmap(
         ))
 
     # --- Final Figure Layout ---
-    fig.update_layout(title=title, xaxis_title="Strike Price (K, $)", yaxis_title="Days to Expiration (T)",
-                      yaxis_autorange='reversed', width=None, height=600, legend=dict(yanchor="top", y=0.99, xanchor="right", x=0.99, bgcolor='rgba(255,255,255,0.6)'))
+    fig.update_layout(
+        title=title, 
+        xaxis_title="Strike Price (K, $)", 
+        yaxis_title="Days to Expiration (T)",
+        yaxis_autorange='reversed', 
+        width=None, height=600, 
+        legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01, bgcolor='rgba(0,0,0,0.8)')
+    )
     fig.update_xaxes(range=[k_min_render, k_max_render])
     fig.update_yaxes(range=[t_max_render, t_min_render]) # Reversed T range
 
@@ -489,18 +617,20 @@ def display_price_view(loaded_data: Dict[str, Any], params: Dict[str, Any]):
                 else: st.warning("LGBM grid invalid for Market IV interp."); market_price_surface = None
 
             # 6. Calculate ITM/OTM Boundary
-            needs_boundary = show_itm_overlay or show_sim_stats or show_trade_hm
+            # Boundary is needed for P&L calculation within the simulation, which feeds the trade heatmap P&L/WinLoss
+            needs_boundary = show_trade_hm or show_sim_stats or show_itm_overlay
             if not error_occurred and needs_boundary and lgbm_price_surface: st.write("Calculating ITM/OTM boundary...");
             if not error_occurred and needs_boundary and lgbm_price_surface:
                  T_axis = lgbm_price_surface[1][:, 0]
                  itm_otm_boundary_data = calculate_itm_otm_boundary(transformed_df, stock, calculation_date, spot_price, T_axis, horizons)
                  if itm_otm_boundary_data: st.write("Boundary calculated.")
-                 else: st.warning("Could not calculate ITM/OTM boundary.")
+                 else: st.warning("Could not calculate ITM/OTM boundary (needed for P&L simulation).")
 
             # 7. Run Simulation
+            # Simulation is needed if showing stats OR the trade heatmap
             needs_simulation = show_sim_stats or show_trade_hm
             if not error_occurred and needs_simulation:
-                # Simulation needs prices and S0. Boundary is needed for P&L stats but not the trade heatmap itself.
+                # Simulation needs prices and S0. Boundary is needed for P&L stats and the heatmap P&L/WinLoss.
                 can_simulate = lgbm_price_surface and market_price_surface and (spot_price and np.isfinite(spot_price))
                 if can_simulate:
                     st.write("Running simulation...")
@@ -519,9 +649,12 @@ def display_price_view(loaded_data: Dict[str, Any], params: Dict[str, Any]):
             if lgbm_price_surface: all_p.append(lgbm_price_surface[2][np.isfinite(lgbm_price_surface[2])])
             if market_price_surface: all_p.append(market_price_surface[2][np.isfinite(market_price_surface[2])])
             zmin_p, zmax_p = 0, 1 # Default price range
-            if all_p: flat_p = np.concatenate(all_p);
-            if flat_p.size > 0: zmin_p, zmax_p = max(0., np.percentile(flat_p,1)), np.percentile(flat_p,99);
-            if zmin_p >= zmax_p: zmin_p, zmax_p = max(0., np.min(flat_p)), np.max(flat_p);
+            if all_p:
+                flat_p = np.concatenate(all_p)
+                if flat_p.size > 0: zmin_p, zmax_p = max(0., np.percentile(flat_p,1)), np.percentile(flat_p,99);
+            if zmin_p >= zmax_p:
+                 if flat_p.size > 0: zmin_p, zmax_p = max(0., np.min(flat_p)), np.max(flat_p);
+                 else: zmin_p, zmax_p = 0, 1
             if zmax_p <= zmin_p: zmax_p = zmin_p + max(0.1, zmin_p*0.1)
 
             # K-axis range primarily based on simulation padding, passed to heatmap functions
@@ -550,16 +683,27 @@ def display_price_view(loaded_data: Dict[str, Any], params: Dict[str, Any]):
                 fig_diff = create_price_heatmap(diff_Z, lgbm_price_surface[0], lgbm_price_surface[1], f"{stock} Price Diff (Market - LGBM) {title_suffix}", "Price Diff ($)", S0=spot_price, colorscale="RdBu_r", zmin=zmin_d, zmax=zmax_d,
                                                  itm_otm_line=itm_otm_boundary_data if show_itm_overlay else None, option_type=option_type, realized_points_data=realized_points_data, consider_realized_for_axis=consider_realized, sim_k_range=sim_k_range)
                 diff_txt = np.array([[f"{d:+.2f}" if np.isfinite(d) else "" for d in r] for r in diff_Z]); cdata=np.dstack((lgbm_price_surface[0],lgbm_price_surface[1],market_price_surface[2],lgbm_price_surface[2]))
-                fig_diff.update_traces(text=diff_txt, texttemplate="%{text}", textfont={"size":8,"color":"black"}, customdata=cdata, hovertemplate="Diff Details...<br>Mkt:${customdata[2]:.4f}<br>LGBM:${customdata[3]:.4f}<br>Diff:${z:.4f}<extra></extra>")
+                fig_diff.update_traces(text=diff_txt, texttemplate="%{text}", textfont={"size":14,"color":"black"}, customdata=cdata, hovertemplate="Diff Details...<br>Mkt:${customdata[2]:.4f}<br>LGBM:${customdata[3]:.4f}<br>Diff:${z:.4f}<extra></extra>")
                 st.plotly_chart(fig_diff, use_container_width=True)
             elif show_diff_hm: st.warning("Price Difference heatmap cannot be displayed.")
+
             # Trade Heatmap
             if show_trade_hm:
-                if sim_results and 'trade_action_grid' in sim_results and lgbm_price_surface:
-                     st.plotly_chart(create_trade_heatmap(sim_results['trade_action_grid'], lgbm_price_surface[0], lgbm_price_surface[1], f"{stock} Sim Trade Actions ({option_type.capitalize()}) {title_suffix}", S0=spot_price,
-                                                       realized_points_data=realized_points_data, consider_realized_for_axis=consider_realized, sim_k_range=sim_k_range), use_container_width=True)
-                     k_range = sim_results.get("strike_range_used", (np.nan, np.nan)); st.caption(f"Actions shown for K ≈ [\${k_range[0]:.2f}, \${k_range[1]:.2f}] using {sim_threshold:.1%} threshold.")
-                else: st.warning("Trade Action heatmap cannot be displayed (simulation failed or prerequisites missing).")
+                if sim_results and 'trade_action_grid' in sim_results and \
+                   'trade_pnl_grid' in sim_results and 'trade_win_loss_grid' in sim_results and \
+                   lgbm_price_surface:
+                     fig_trade = create_trade_heatmap(
+                         sim_results['trade_action_grid'],
+                         sim_results['trade_pnl_grid'],
+                         sim_results['trade_win_loss_grid'],
+                         lgbm_price_surface[0], lgbm_price_surface[1],
+                         f"{stock} Sim Trade Outcome ({option_type.capitalize()}) {title_suffix}", S0=spot_price,
+                         realized_points_data=realized_points_data, consider_realized_for_axis=consider_realized, sim_k_range=sim_k_range
+                     )
+                     st.plotly_chart(fig_trade, use_container_width=True)
+                     k_range = sim_results.get("strike_range_used", (np.nan, np.nan))
+                     st.caption(f"Trades considered for K ≈ [\${k_range[0]:.2f}, \${k_range[1]:.2f}] using {sim_threshold:.1%} threshold. Color shows P&L, symbols show direction: ▲ Buy, ▼ Sell.")
+                else: st.warning("Trade Outcome heatmap cannot be displayed (simulation failed or prerequisites missing).")
 
             # --- Display Simulation Statistics ---
             if show_sim_stats:
@@ -569,11 +713,14 @@ def display_price_view(loaded_data: Dict[str, Any], params: Dict[str, Any]):
                          # Display the parameters used in this specific run
                          k_range = sim_results.get("strike_range_used", (np.nan, np.nan))
                          s0_val = f"${spot_price:.2f}" if spot_price and np.isfinite(spot_price) else "N/A"
-                         boundary_info = "using actual outcomes (ITM/OTM boundary)." if itm_otm_boundary_data else "but P&L could not be calculated (missing boundary data)."
+                         # Check if boundary data was actually used for P&L
+                         pnl_calculated = 'trade_pnl_grid' in sim_results and np.any(np.isfinite(sim_results['trade_pnl_grid']))
+                         boundary_info = "using actual outcomes (ITM/OTM boundary)." if pnl_calculated else "but P&L could not be calculated (missing/insufficient boundary data)."
+
                          st.markdown(f"""
                          This simulation estimates historical performance by comparing the model's price prediction to the market price.
 
-                         - **Trades Considered:** Options with strikes (K) between **{k_range[0]:.2f}** and **{k_range[1]:.2f}** (approx. **±{sim_strike_padding:.0%}** of S0={s0_val}).
+                         - **Trades Considered:** Options with strikes (K) between **\${k_range[0]:.2f}** and **\${k_range[1]:.2f}** (approx. **±{sim_strike_padding:.0%}** of S0={s0_val}).
                          - **Trade Trigger:** A trade occurs if `|Model Price - Market Price| / Market Price` exceeds the threshold of **{sim_threshold:.1%}**.
                            - `Model > Market * (1 + Threshold)` -> **Buy {option_type.capitalize()}** (Predicted as Underpriced)
                            - `Model < Market * (1 - Threshold)` -> **Sell {option_type.capitalize()}** (Predicted as Overpriced)
@@ -583,12 +730,20 @@ def display_price_view(loaded_data: Dict[str, Any], params: Dict[str, Any]):
 
                     st.markdown("##### Summary Statistics")
                     if sim_results["total_trades"] > 0:
-                           cols = st.columns(3); cols[0].metric("Trades", f"{sim_results['total_trades']:,}"); cols[1].metric("Total P&L ($)", f"{sim_results['total_profit']:,.2f}"); cols[2].metric("Avg P&L ($)", f"{sim_results['avg_profit_per_trade']:,.2f}"); st.divider()
-                           st.markdown("<h6>Longs (Model > Mkt)</h6>", unsafe_allow_html=True); cols_l = st.columns(3); cols_l[0].metric("Trades", f"{sim_results['long_trades']:,}"); cols_l[1].metric("P&L ($)", f"{sim_results['long_profit']:,.2f}"); cols_l[2].metric("Win Rate", f"{sim_results['long_win_rate']:.1%}")
-                           st.markdown("<h6>Shorts (Model < Mkt)</h6>", unsafe_allow_html=True); cols_s = st.columns(3); cols_s[0].metric("Trades", f"{sim_results['short_trades']:,}"); cols_s[1].metric("P&L ($)", f"{sim_results['short_profit']:,.2f}"); cols_s[2].metric("Win Rate", f"{sim_results['short_win_rate']:.1%}")
+                           # Use P&L data if available, otherwise indicate N/A
+                           total_profit_val = sim_results['total_profit'] if pnl_calculated else np.nan
+                           avg_profit_val = sim_results['avg_profit_per_trade'] if pnl_calculated else np.nan
+                           long_profit_val = sim_results['long_profit'] if pnl_calculated else np.nan
+                           long_win_rate_val = sim_results['long_win_rate'] if pnl_calculated else np.nan
+                           short_profit_val = sim_results['short_profit'] if pnl_calculated else np.nan
+                           short_win_rate_val = sim_results['short_win_rate'] if pnl_calculated else np.nan
+
+                           cols = st.columns(3); cols[0].metric("Trades", f"{sim_results['total_trades']:,}"); cols[1].metric("Total P&L ($)", f"{total_profit_val:,.2f}" if np.isfinite(total_profit_val) else "N/A"); cols[2].metric("Avg P&L ($)", f"{avg_profit_val:,.2f}" if np.isfinite(avg_profit_val) else "N/A"); st.divider()
+                           st.markdown("<h6>Longs (Model > Mkt)</h6>", unsafe_allow_html=True); cols_l = st.columns(3); cols_l[0].metric("Trades", f"{sim_results['long_trades']:,}"); cols_l[1].metric("P&L ($)", f"{long_profit_val:,.2f}" if np.isfinite(long_profit_val) else "N/A"); cols_l[2].metric("Win Rate", f"{long_win_rate_val:.1%}" if np.isfinite(long_win_rate_val) else "N/A")
+                           st.markdown("<h6>Shorts (Model < Mkt)</h6>", unsafe_allow_html=True); cols_s = st.columns(3); cols_s[0].metric("Trades", f"{sim_results['short_trades']:,}"); cols_s[1].metric("P&L ($)", f"{short_profit_val:,.2f}" if np.isfinite(short_profit_val) else "N/A"); cols_s[2].metric("Win Rate", f"{short_win_rate_val:.1%}" if np.isfinite(short_win_rate_val) else "N/A")
                            sk, sb = sim_results.get("skipped_strike_range",0), sim_results.get("skipped_no_boundary",0)
                            if sk > 0: st.caption(f"ℹ️ {sk:,} pts ignored by K range filter.")
-                           if sb > 0: st.caption(f"ℹ️ P&L unknown for {sb:,} trades (boundary data issue).") # Indicate P&L uncertainty
+                           if sb > 0: st.caption(f"ℹ️ P&L/Outcome unknown for {sb:,} trades (boundary data issue).") # Indicate P&L uncertainty
                     else: st.info("No trades triggered with current filters."); sk = sim_results.get("skipped_strike_range",0);
                     if sk > 0: st.caption(f"ℹ️ {sk:,} pts ignored by K range filter.")
 
