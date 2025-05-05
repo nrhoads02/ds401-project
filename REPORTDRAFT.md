@@ -97,7 +97,7 @@ This predicted surface ( $\sigma_{LGBM}(K, T)$ ) serves multiple purposes in the
 #### 2.2.3. Final Model: LightGBM for Conditional Realized Volatility
 
 * **Model Name:** LightGBM (Light Gradient Boosting Machine)
-* **Response Variable:** Future Annualized Realized Volatility ($\sigma$). Derived from `rv_hd_future`: $\sigma = \sqrt{\text{rv_hd_future} / (h/252.0)}$, where $h$ is the prediction horizon in trading days.
+* **Response Variable:** Future Annualized Realized Volatility ($\sigma$). Derived from `rv_hd_future`: $\sigma = \sqrt{\text{rv\_hd\_future} / (h/252.0)}$, where $h$ is the prediction horizon in trading days.
 * **Explanatory Variables:**
   * A wide range of technical indicators (see [`src/data_transformation/INDICATORS.md`](src/data_transformation/INDICATORS.md)).
   * Joined CBOE volatility index values.
