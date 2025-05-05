@@ -558,7 +558,7 @@ def display_price_view(loaded_data: Dict[str, Any], params: Dict[str, Any]):
                 if sim_results and 'trade_action_grid' in sim_results and lgbm_price_surface:
                      st.plotly_chart(create_trade_heatmap(sim_results['trade_action_grid'], lgbm_price_surface[0], lgbm_price_surface[1], f"{stock} Sim Trade Actions ({option_type.capitalize()}) {title_suffix}", S0=spot_price,
                                                        realized_points_data=realized_points_data, consider_realized_for_axis=consider_realized, sim_k_range=sim_k_range), use_container_width=True)
-                     k_range = sim_results.get("strike_range_used", (np.nan, np.nan)); st.caption(f"Actions shown for K ≈ [${k_range[0]:.2f}, ${k_range[1]:.2f}$] using {sim_threshold:.1%} threshold.")
+                     k_range = sim_results.get("strike_range_used", (np.nan, np.nan)); st.caption(f"Actions shown for K ≈ [\${k_range[0]:.2f}, \${k_range[1]:.2f}] using {sim_threshold:.1%} threshold.")
                 else: st.warning("Trade Action heatmap cannot be displayed (simulation failed or prerequisites missing).")
 
             # --- Display Simulation Statistics ---
