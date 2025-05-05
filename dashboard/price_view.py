@@ -540,9 +540,11 @@ def create_trade_heatmap(
         [1.0, 'rgb(27, 120, 55)']     # Dark green for largest profits
     ]
 
+    abs_max_pnl = max(abs(pnl_min), abs(pnl_max))
+
     fig.add_trace(go.Heatmap(
         z=masked_pnl_grid, x=K_mesh[0, :], y=T_mesh[:, 0],
-        colorscale=colorscale_pnl, zmid=0, zmin=pnl_min, zmax=pnl_max,
+        colorscale=colorscale_pnl, zmin=-abs_max_pnl, zmax=abs_max_pnl, zmid=0,
         colorbar=dict(title='P&L ($)', thickness=15),
         opacity=0.8,  # Slightly transparent to better show symbols overlay
         customdata=np.dstack((action_text_grid, K_mesh, T_mesh, win_loss_text_grid, pnl_text_grid, hover_info_grid)),
