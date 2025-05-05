@@ -81,7 +81,7 @@ The core transformation involved enriching the cleaned OHLCV data with features 
 
 The core modeling effort aimed to **predict future realized volatility surfaces**. The purpose was predictive: given the market conditions and technical indicators up to a specific trade date, what is the expected realized volatility ($\sigma$) over a future horizon ($T$), conditional on the stock price ending at a specific strike ($K$) relative to the starting price ($S_0$)?
 
-This predicted surface ($\sigma_{LGBM}(K, T)$) serves multiple purposes in the application:
+This predicted surface ( $\sigma_{LGBM}(K, T)$ ) serves multiple purposes in the application:
 
 1. **Direct Visualization:** Allows users to see the model's expectation of future volatility structure.
 2. **Comparison with Market IV:** Highlighting differences between the model's prediction and the market's expectation (Implied Volatility) can suggest potential mispricings or areas where the model disagrees with market consensus.
@@ -97,11 +97,11 @@ This predicted surface ($\sigma_{LGBM}(K, T)$) serves multiple purposes in the a
 #### 2.2.3. Final Model: LightGBM for Conditional Realized Volatility
 
 * **Model Name:** LightGBM (Light Gradient Boosting Machine)
-* **Response Variable:** Future Annualized Realized Volatility ($\sigma$). Derived from `rv_hd_future`: $\sigma = \sqrt{rv\_hd\_future / (h/252.0)}$, where $h$ is the prediction horizon in trading days.
+* **Response Variable:** Future Annualized Realized Volatility ($\sigma$). Derived from `rv_hd_future`: $\sigma = \sqrt{\text{rv_hd_future} / (h/252.0)}$, where $h$ is the prediction horizon in trading days.
 * **Explanatory Variables:**
   * A wide range of technical indicators (see [`src/data_transformation/INDICATORS.md`](src/data_transformation/INDICATORS.md)).
   * Joined CBOE volatility index values.
-  * Log-moneyness ($k = log(K/S_0)$), corresponding to `log_ret_future_h` during training.
+  * Log-moneyness ( $k = log(K/S_0)$ ), corresponding to `log_ret_future_h` during training.
   * Interaction Terms (e.g., $k^2$, $k \times \text{VIX}$, $k \times \text{RV}$).
   * Feature Selection: A predefined set of low-importance features were removed before training.
 * **Model Description:** We used LightGBM, a gradient boosting framework efficient for large datasets. Our full implementation is found in [`src/data_modeling/surface_lgbm_modeling.py`](src/data_modeling/surface_lgbm_modeling.py):
