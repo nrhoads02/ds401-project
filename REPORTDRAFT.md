@@ -173,7 +173,7 @@ Outputs update dynamically based on user selections.
 * **Model:** Chose LightGBM for efficiency and performance on large tabular data.
 * **Data Storage:** Adopted partitioned Parquet in GitHub for dashboard compatibility and performance.
 * **Dashboard Framework:** Selected Streamlit for rapid Python-based development.
-* **Target Variable:** Modeled conditional future RV ($\sigma(k,T)$) to separate volatility forecasting from pricing model specifics.
+* **Target Variable:** Modeled conditional future RV ( $\sigma(k,T)$ ) to separate volatility forecasting from pricing model specifics.
 * **Feature Engineering:** Focused on standard indicators plus explicit interaction terms involving log-moneyness ($k$).
 
 ### 3.3. Model Support for Goals
