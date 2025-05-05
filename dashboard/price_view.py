@@ -185,7 +185,7 @@ def create_price_heatmap(
     fig.add_trace(go.Heatmap(
         z=price_Z, x=K_mesh[0, :], y=T_mesh[:, 0], colorscale=colorscale,
         colorbar=dict(title=colorbar_title, thickness=15), zmin=zmin, zmax=zmax,
-        text=text_labels, texttemplate="%{text}", textfont={"size": 14, "color": "white"},
+        text=text_labels, texttemplate="%{text}", textfont={"size": 18, "color": "white"},
         customdata=np.dstack((K_mesh, T_mesh)),
         hovertemplate=("<b>Price Details</b><br>K: $%{customdata[0]:.2f}<br>T: %{customdata[1]:.0f}d<br>"
                        "Price: $%{z:.4f}<extra></extra>"),
@@ -208,7 +208,7 @@ def create_price_heatmap(
              if len(line_T_p) > 1:
                  fig.add_trace(go.Scatter(x=line_K_p, y=line_T_p, mode='lines', line=dict(color='white', width=3, dash='dash'), name='Actual ITM/OTM Boundary', hoverinfo='skip'))
                  anno_text = "Right: ITM<br>Left: OTM" if option_type=='call' else "Left: ITM<br>Right: OTM"
-                 fig.add_annotation(x=0.95, y=0.05, xref="paper", yref="paper", text=anno_text, showarrow=False, font=dict(color="white", size=14), bgcolor="rgba(0,0,0,0.5)", bordercolor="white", borderwidth=1)
+                 fig.add_annotation(x=0.95, y=0.05, xref="paper", yref="paper", text=anno_text, showarrow=False, font=dict(color="white", size=18), bgcolor="rgba(0,0,0,0.5)", bordercolor="white", borderwidth=1)
              # No warning if not plotted, just silently omit
         # No warning if data invalid, just silently omit
 
@@ -275,6 +275,7 @@ def simulate_trading_strategy(
     """
     Simulates trading based on model vs market price differences within a strike range.
     Returns statistics and grids of trade actions, win/loss status, and P&L.
+    Also returns detailed lists of individual trade information for display.
     """
     # --- Input Validation ---
     if not lgbm_price_surface or not market_price_surface: return None
@@ -297,6 +298,10 @@ def simulate_trading_strategy(
     trade_pnl_grid = np.full_like(K_mesh, np.nan, dtype=float) # Grid for P&L per trade
     trade_win_loss_grid = np.zeros_like(K_mesh, dtype=int) # Grid for win/loss status (1=Win, -1=Loss, 0=None/Unknown)
     min_k_trade, max_k_trade = S0 * (1.0 - strike_padding), S0 * (1.0 + strike_padding) # K filter range
+
+    # For detailed trade information
+    long_trade_details = []
+    short_trade_details = []
 
     # --- Create Boundary Interpolation Function ---
     boundary_interp = None
@@ -336,23 +341,77 @@ def simulate_trading_strategy(
                  except Exception: actual_K_at_T = np.nan; skipped_no_boundary += 1
 
                  if np.isfinite(actual_K_at_T): # Proceed if actual K found
-                     intrinsic = max(0.0, actual_K_at_T - K) if option_type=='call' else max(0.0, K - actual_K_at_T)
-                     profit = (intrinsic - mkt_p) if trade_action_num == 1 else (mkt_p - intrinsic)
+                     # Calculate intrinsic value at expiry (what the option is worth)
+                     if option_type == 'call':
+                         intrinsic = max(0.0, actual_K_at_T - K)
+                         itm_status = actual_K_at_T > K  # ITM for call: Actual price > Strike
+                     else:  # put
+                         intrinsic = max(0.0, K - actual_K_at_T)
+                         itm_status = actual_K_at_T < K  # ITM for put: Actual price < Strike
+                         
+                     # Calculate profit
+                     if trade_action_num == 1:  # Buy
+                         profit = intrinsic - mkt_p
+                         pnl_desc = "intrinsic value at expiry ($%.2f) - entry price ($%.2f)" % (intrinsic, mkt_p)
+                     else:  # Sell
+                         profit = mkt_p - intrinsic
+                         pnl_desc = "entry price ($%.2f) - intrinsic value at expiry ($%.2f)" % (mkt_p, intrinsic)
+                     
                      trade_pnl_grid[i, j] = profit # Store P&L
-                     trade_win_loss_grid[i, j] = 1 if profit > 0 else -1 # Store Win/Loss status
+                     win_loss = 1 if profit > 0 else -1
+                     trade_win_loss_grid[i, j] = win_loss # Store Win/Loss status
 
+                     # Update summary statistics
                      total_profit += profit
-                     if trade_action_num == 1:
+                     if trade_action_num == 1:  # Buy
                          long_profit += profit
                          if profit > 0: long_wins += 1
-                     else:
+                         
+                         # Add detailed trade info to the list
+                         long_trade_details.append({
+                             "strike": K,
+                             "days": int(T),
+                             "model_price": lgbm_p,
+                             "market_price": mkt_p,
+                             "price_diff_pct": (lgbm_p - mkt_p) / mkt_p * 100,
+                             "entry_price": mkt_p,
+                             "actual_price_at_expiry": actual_K_at_T,
+                             "intrinsic_value": intrinsic,
+                             "itm_status": "ITM" if itm_status else "OTM",
+                             "profit": profit,
+                             "win_loss": "Win" if win_loss > 0 else "Loss",
+                             "explanation": f"Bought {option_type} at ${mkt_p:.2f}, expired {'ITM' if itm_status else 'OTM'} with final stock price ${actual_K_at_T:.2f} vs strike ${K:.2f}. Final P&L: ${profit:.2f} ({pnl_desc})"
+                         })
+                     else:  # Sell
                          short_profit += profit
                          if profit > 0: short_wins += 1
+                         
+                         # Add detailed trade info to the list
+                         short_trade_details.append({
+                             "strike": K,
+                             "days": int(T),
+                             "model_price": lgbm_p,
+                             "market_price": mkt_p,
+                             "price_diff_pct": (lgbm_p - mkt_p) / mkt_p * 100,
+                             "entry_price": mkt_p,
+                             "actual_price_at_expiry": actual_K_at_T,
+                             "intrinsic_value": intrinsic,
+                             "itm_status": "ITM" if itm_status else "OTM",
+                             "profit": profit,
+                             "win_loss": "Win" if win_loss > 0 else "Loss",
+                             "explanation": f"Sold {option_type} at ${mkt_p:.2f}, expired {'ITM' if itm_status else 'OTM'} with final stock price ${actual_K_at_T:.2f} vs strike ${K:.2f}. Final P&L: ${profit:.2f} ({pnl_desc})"
+                         })
                  # else: # If boundary interp failed for this point, P&L is NaN, Win/Loss is 0 (already initialized)
                  #    skipped_no_boundary +=1 # Count here or earlier? Counted earlier.
             elif trade_action_num != 0: # Trade occurred but boundary unavailable or interp failed
                  skipped_no_boundary +=1
                  # P&L remains NaN, Win/Loss remains 0
+
+    # --- Sort trade details by P&L (most profitable first) ---
+    if long_trade_details:
+        long_trade_details.sort(key=lambda x: x["profit"], reverse=True)
+    if short_trade_details:
+        short_trade_details.sort(key=lambda x: x["profit"], reverse=True)
 
     # --- Compile Results ---
     total_sim_trades = long_trades + short_trades
@@ -367,7 +426,10 @@ def simulate_trading_strategy(
         "strike_range_used": (min_k_trade, max_k_trade),
         "trade_action_grid": trade_action_grid,
         "trade_pnl_grid": trade_pnl_grid, # Add P&L grid to results
-        "trade_win_loss_grid": trade_win_loss_grid # Add Win/Loss grid to results
+        "trade_win_loss_grid": trade_win_loss_grid, # Add Win/Loss grid to results
+        "long_trade_details": long_trade_details, # Detailed records of long trades
+        "short_trade_details": short_trade_details, # Detailed records of short trades
+        "option_type": option_type # Keep track of which option type was simulated
     }
     return results
 
@@ -378,13 +440,14 @@ def create_trade_heatmap(
     trade_win_loss_grid: np.ndarray,
     K_mesh: np.ndarray, T_mesh: np.ndarray, title: str, S0: float,
     realized_points_data: Optional[Tuple] = None, consider_realized_for_axis: bool = False,
-    sim_k_range: Optional[Tuple[float, float]] = None
+    sim_k_range: Optional[Tuple[float, float]] = None,
+    option_type: str = 'call' # Add option type for detailed hover info
 ) -> go.Figure:
     """
     Creates a 2D Plotly heatmap visualizing simulated trades using:
     - Color gradient based on P&L (profit/loss amount)
     - Symbols overlay for trade direction (buy/sell)
-    - Additional hover information showing complete trade details
+    - Enhanced hover information showing complete trade details
     """
     fig = go.Figure()
 
@@ -437,6 +500,36 @@ def create_trade_heatmap(
     # Format P&L grid for display
     pnl_text_grid = np.array([[f"${pnl:+.2f}" if np.isfinite(pnl) else "N/A" for pnl in row] for row in trade_pnl_grid])
 
+    # Build detailed hover information including explanation
+    def build_hover_info(i, j):
+        action = trade_action_grid[i, j]
+        if action == 0:
+            return "No Trade"
+            
+        K, T = K_mesh[i, j], T_mesh[i, j]
+        pnl = trade_pnl_grid[i, j]
+        win_loss = trade_win_loss_grid[i, j]
+        
+        # Include detailed trade explanation in hover
+        if option_type == 'call':
+            itm_explanation = "Stock > Strike at expiry" if win_loss > 0 else "Stock ≤ Strike at expiry"
+            if action == 1:  # Buy call
+                return f"<b>Buy {option_type.capitalize()}</b><br>Strike: ${K:.2f}, T: {T:.0f}d<br>P&L: {pnl:+.2f}<br>Result: {win_loss_map.get(win_loss)}<br><i>{itm_explanation}</i>"
+            else:  # Sell call
+                return f"<b>Sell {option_type.capitalize()}</b><br>Strike: ${K:.2f}, T: {T:.0f}d<br>P&L: {pnl:+.2f}<br>Result: {win_loss_map.get(win_loss)}<br><i>{itm_explanation}</i>"
+        else:  # put
+            itm_explanation = "Stock < Strike at expiry" if win_loss > 0 else "Stock ≥ Strike at expiry"
+            if action == 1:  # Buy put
+                return f"<b>Buy {option_type.capitalize()}</b><br>Strike: ${K:.2f}, T: {T:.0f}d<br>P&L: {pnl:+.2f}<br>Result: {win_loss_map.get(win_loss)}<br><i>{itm_explanation}</i>"
+            else:  # Sell put
+                return f"<b>Sell {option_type.capitalize()}</b><br>Strike: ${K:.2f}, T: {T:.0f}d<br>P&L: {pnl:+.2f}<br>Result: {win_loss_map.get(win_loss)}<br><i>{itm_explanation}</i>"
+
+    # Build enhanced customdata with detailed hover info
+    hover_info_grid = np.full(K_mesh.shape, "", dtype=object)
+    for i in range(K_mesh.shape[0]):
+        for j in range(K_mesh.shape[1]):
+            hover_info_grid[i, j] = build_hover_info(i, j)
+
     # --- Heatmap Trace for P&L Coloring ---
     # Use a diverging colorscale with red for losses and green for profits
     colorscale_pnl = [
@@ -452,15 +545,8 @@ def create_trade_heatmap(
         colorscale=colorscale_pnl, zmid=0, zmin=pnl_min, zmax=pnl_max,
         colorbar=dict(title='P&L ($)', thickness=15),
         opacity=0.8,  # Slightly transparent to better show symbols overlay
-        customdata=np.dstack(( action_text_grid,K_mesh, T_mesh, win_loss_text_grid, pnl_text_grid, trade_action_grid)),
-        hovertemplate=(
-            "<b>%{customdata[0]} Trade</b><br>"
-            "K: $%{customdata[1]:.2f}<br>"
-            "T: %{customdata[2]:.0f}d<br>"
-            "Outcome: %{customdata[3]}<br>"
-            "P&L: %{customdata[4]}"
-            "<extra></extra>"
-        ),
+        customdata=np.dstack((action_text_grid, K_mesh, T_mesh, win_loss_text_grid, pnl_text_grid, hover_info_grid)),
+        hovertemplate="%{customdata[5]}<extra></extra>",
         hoverongaps=False,
         name='P&L'
     ))
@@ -471,23 +557,14 @@ def create_trade_heatmap(
     if np.any(buy_mask):
         buy_K = K_mesh[buy_mask]
         buy_T = T_mesh[buy_mask]
-        buy_pnl = trade_pnl_grid[buy_mask]
-        buy_outcome = trade_win_loss_grid[buy_mask]
         
         buy_text = np.array(["▲" for _ in range(len(buy_K))])  # Triangle up for buys
-        buy_custom = np.column_stack((
-            buy_K, buy_T,
-            np.array(["Buy" for _ in range(len(buy_K))]),
-            np.array([win_loss_map.get(o, "N/A") for o in buy_outcome]),
-            np.array([f"${p:+.2f}" if np.isfinite(p) else "N/A" for p in buy_pnl])
-        ))
         
         fig.add_trace(go.Scatter(
             x=buy_K, y=buy_T, mode='text',
-            text=buy_text, textfont=dict(size=18, color='white'),
-            customdata=buy_custom,
+            text=buy_text, textfont=dict(size=24, color='white'),
+            hoverinfo='skip',
             name='Buy',
-            hoverinfo='skip'
         ))
 
     # Extract points for Sell trades (trade_action_grid == -1)
@@ -495,23 +572,14 @@ def create_trade_heatmap(
     if np.any(sell_mask):
         sell_K = K_mesh[sell_mask]
         sell_T = T_mesh[sell_mask]
-        sell_pnl = trade_pnl_grid[sell_mask]
-        sell_outcome = trade_win_loss_grid[sell_mask]
         
         sell_text = np.array(["▼" for _ in range(len(sell_K))])  # Triangle down for sells
-        sell_custom = np.column_stack((
-            sell_K, sell_T,
-            np.array(["Sell" for _ in range(len(sell_K))]),
-            np.array([win_loss_map.get(o, "N/A") for o in sell_outcome]),
-            np.array([f"${p:+.2f}" if np.isfinite(p) else "N/A" for p in sell_pnl])
-        ))
         
         fig.add_trace(go.Scatter(
             x=sell_K, y=sell_T, mode='text',
-            text=sell_text, textfont=dict(size=18, color='white'),
-            customdata=sell_custom,
+            text=sell_text, textfont=dict(size=24, color='white'),
+            hoverinfo='skip',
             name='Sell',
-            hoverinfo='skip'
         ))
 
     # --- Add Vertical Line for Spot Price (S0) ---
@@ -520,6 +588,15 @@ def create_trade_heatmap(
             x=[S0, S0], y=[t_min_render, t_max_render], mode='lines',
             line=dict(color=S0_LINE_COLOR, width=2, dash=S0_LINE_DASH), name=f'Spot Price (S0=${S0:.2f})', hoverinfo='skip'
         ))
+
+    # --- Add explanation of symbols ---
+    fig.add_annotation(
+        x=0.01, y=0.98, xref="paper", yref="paper",
+        text="▲ Buy (Model > Market)<br>▼ Sell (Model < Market)",
+        showarrow=False, font=dict(color="white", size=18),
+        bgcolor="rgba(0,0,0,0.7)", bordercolor="white", borderwidth=1,
+        align="left"
+    )
 
     # --- Final Figure Layout ---
     fig.update_layout(
@@ -682,8 +759,42 @@ def display_price_view(loaded_data: Dict[str, Any], params: Dict[str, Any]):
                 if valid_d.size > 0: max_abs = np.percentile(np.abs(valid_d), 98); max_abs=max(max_abs,0.1); zmin_d,zmax_d=-max_abs, max_abs
                 fig_diff = create_price_heatmap(diff_Z, lgbm_price_surface[0], lgbm_price_surface[1], f"{stock} Price Diff (Market - LGBM) {title_suffix}", "Price Diff ($)", S0=spot_price, colorscale="RdBu_r", zmin=zmin_d, zmax=zmax_d,
                                                  itm_otm_line=itm_otm_boundary_data if show_itm_overlay else None, option_type=option_type, realized_points_data=realized_points_data, consider_realized_for_axis=consider_realized, sim_k_range=sim_k_range)
-                diff_txt = np.array([[f"{d:+.2f}" if np.isfinite(d) else "" for d in r] for r in diff_Z]); cdata=np.dstack((lgbm_price_surface[0],lgbm_price_surface[1],market_price_surface[2],lgbm_price_surface[2]))
-                fig_diff.update_traces(text=diff_txt, texttemplate="%{text}", textfont={"size":14,"color":"black"}, customdata=cdata, hovertemplate="Diff Details...<br>Mkt:${customdata[2]:.4f}<br>LGBM:${customdata[3]:.4f}<br>Diff:${z:.4f}<extra></extra>")
+                
+                # Calculate percentage difference for hover information
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    pct_diff_Z = (market_price_surface[2] - lgbm_price_surface[2]) / lgbm_price_surface[2] * 100
+                    pct_diff_Z = np.where(np.isfinite(pct_diff_Z), pct_diff_Z, np.nan)
+                
+                # Format displayed text with dollar signs
+                diff_txt = np.array([[f"${d:+.2f}" if np.isfinite(d) else "" for d in r] for r in diff_Z])
+                
+                # Create custom data array including percentage difference
+                cdata = np.dstack((
+                    lgbm_price_surface[0],      # Strike price
+                    lgbm_price_surface[1],      # Time to maturity
+                    market_price_surface[2],    # Market price
+                    lgbm_price_surface[2],      # LGBM price
+                    diff_Z,                     # Absolute difference
+                    pct_diff_Z                  # Percentage difference
+                ))
+                
+                # Update hovertemplate with improved formatting and percentage difference
+                hover_template = (
+                    "<b>Price Difference</b><br>"
+                    "K: $%{customdata[0]:.2f}<br>"
+                    "T: %{customdata[1]:.0f}d<br>"
+                    "Market: $%{customdata[2]:.2f}<br>"
+                    "LGBM: $%{customdata[3]:.2f}<br>"
+                    "Diff: $%{customdata[4]:.2f} (%{customdata[5]:.2f}%)<extra></extra>"
+                )
+                
+                fig_diff.update_traces(
+                    text=diff_txt, 
+                    texttemplate="%{text}", 
+                    textfont={"size":18,"color":"black"}, 
+                    customdata=cdata, 
+                    hovertemplate=hover_template
+                )
                 st.plotly_chart(fig_diff, use_container_width=True)
             elif show_diff_hm: st.warning("Price Difference heatmap cannot be displayed.")
 
@@ -698,11 +809,12 @@ def display_price_view(loaded_data: Dict[str, Any], params: Dict[str, Any]):
                          sim_results['trade_win_loss_grid'],
                          lgbm_price_surface[0], lgbm_price_surface[1],
                          f"{stock} Sim Trade Outcome ({option_type.capitalize()}) {title_suffix}", S0=spot_price,
-                         realized_points_data=realized_points_data, consider_realized_for_axis=consider_realized, sim_k_range=sim_k_range
+                         realized_points_data=realized_points_data, consider_realized_for_axis=consider_realized, 
+                         sim_k_range=sim_k_range, option_type=option_type
                      )
                      st.plotly_chart(fig_trade, use_container_width=True)
                      k_range = sim_results.get("strike_range_used", (np.nan, np.nan))
-                     st.caption(f"Trades considered for K ≈ [\${k_range[0]:.2f}, \${k_range[1]:.2f}] using {sim_threshold:.1%} threshold. Color shows P&L, symbols show direction: ▲ Buy, ▼ Sell.")
+                     st.caption(f"Trades considered for K ≈ [\${k_range[0]:.2f}, \${k_range[1]:.2f}] using {sim_threshold:.1%} threshold. Color shows P&L, symbols show direction: ▲ Buy, ▼ Sell. Hover over points for detailed trade info.")
                 else: st.warning("Trade Outcome heatmap cannot be displayed (simulation failed or prerequisites missing).")
 
             # --- Display Simulation Statistics ---
@@ -725,6 +837,12 @@ def display_price_view(loaded_data: Dict[str, Any], params: Dict[str, Any]):
                            - `Model > Market * (1 + Threshold)` -> **Buy {option_type.capitalize()}** (Predicted as Underpriced)
                            - `Model < Market * (1 - Threshold)` -> **Sell {option_type.capitalize()}** (Predicted as Overpriced)
                          - **P&L Calculation:** Determined {boundary_info} Assumes entry at Market Price.
+                         - **{option_type.capitalize()} Outcome Logic**:
+                           - For **Call options**: A call is ITM when the stock price at expiry is **higher** than the strike price (K).
+                           - For **Put options**: A put is ITM when the stock price at expiry is **lower** than the strike price (K).
+                         - **Profit Calculation**:
+                           - For **Buy trades**: `P&L = Intrinsic Value at Expiry - Entry Price`
+                           - For **Sell trades**: `P&L = Entry Price - Intrinsic Value at Expiry`
                          - **Disclaimer:** Ignores trading costs, bid-ask spreads, liquidity, and assumes perfect execution. **Not financial advice.**
                          """)
 
@@ -739,8 +857,110 @@ def display_price_view(loaded_data: Dict[str, Any], params: Dict[str, Any]):
                            short_win_rate_val = sim_results['short_win_rate'] if pnl_calculated else np.nan
 
                            cols = st.columns(3); cols[0].metric("Trades", f"{sim_results['total_trades']:,}"); cols[1].metric("Total P&L ($)", f"{total_profit_val:,.2f}" if np.isfinite(total_profit_val) else "N/A"); cols[2].metric("Avg P&L ($)", f"{avg_profit_val:,.2f}" if np.isfinite(avg_profit_val) else "N/A"); st.divider()
-                           st.markdown("<h6>Longs (Model > Mkt)</h6>", unsafe_allow_html=True); cols_l = st.columns(3); cols_l[0].metric("Trades", f"{sim_results['long_trades']:,}"); cols_l[1].metric("P&L ($)", f"{long_profit_val:,.2f}" if np.isfinite(long_profit_val) else "N/A"); cols_l[2].metric("Win Rate", f"{long_win_rate_val:.1%}" if np.isfinite(long_win_rate_val) else "N/A")
-                           st.markdown("<h6>Shorts (Model < Mkt)</h6>", unsafe_allow_html=True); cols_s = st.columns(3); cols_s[0].metric("Trades", f"{sim_results['short_trades']:,}"); cols_s[1].metric("P&L ($)", f"{short_profit_val:,.2f}" if np.isfinite(short_profit_val) else "N/A"); cols_s[2].metric("Win Rate", f"{short_win_rate_val:.1%}" if np.isfinite(short_win_rate_val) else "N/A")
+                           
+                           # Long (Buy) Trades Section
+                           st.markdown("<h6>Longs (Buy - Model > Market)</h6>", unsafe_allow_html=True)
+                           cols_l = st.columns(3)
+                           cols_l[0].metric("Trades", f"{sim_results['long_trades']:,}")
+                           cols_l[1].metric("P&L ($)", f"{long_profit_val:,.2f}" if np.isfinite(long_profit_val) else "N/A")
+                           cols_l[2].metric("Win Rate", f"{long_win_rate_val:.1%}" if np.isfinite(long_win_rate_val) else "N/A")
+                           
+                           # Add expandable trade details for long trades
+                           if 'long_trade_details' in sim_results and sim_results['long_trade_details'] and pnl_calculated:
+                               st.markdown("#### Trade Summary Table")
+                               long_df = pl.DataFrame([
+                                       {
+                                           "Strike": f"${trade['strike']:.2f}", 
+                                           "Days": trade['days'],
+                                           "Entry": f"${trade['entry_price']:.2f}",
+                                           "Final Stock": f"${trade['actual_price_at_expiry']:.2f}",
+                                           "Status": trade['itm_status'],
+                                           "P&L": f"${trade['profit']:+.2f}",
+                                           "Result": trade['win_loss']
+                                       } 
+                                       for trade in sim_results['long_trade_details']
+                               ])
+                               st.dataframe(long_df, use_container_width=True)
+
+                               with st.expander(f"View All {len(sim_results['long_trade_details'])} Long Trades", expanded=False):
+                                   st.markdown("**Long Trades Details** (sorted by profit, most profitable first)")
+                                   for i, trade in enumerate(sim_results['long_trade_details']):
+                                       profit_color = "green" if trade["profit"] > 0 else "red"
+                                       st.markdown(f"""
+                                       <div style="margin-bottom: 10px; padding: 10px; border: 1px solid {'green' if trade['profit'] > 0 else 'red'}; border-radius: 5px;">
+                                         <p style="margin: 0; font-weight: bold;">
+                                           Trade #{i+1}: {trade['win_loss']} (${trade['profit']:.2f} <span style="color:{profit_color}">{'▲' if trade['profit'] > 0 else '▼'}</span>)
+                                         </p>
+                                         <p style="margin: 0; margin-top: 5px;">
+                                           <b>Buy {option_type} @ ${trade['entry_price']:.2f}</b>
+                                           Strike: ${trade['strike']:.2f}, Expiry: {trade['days']} days
+                                         </p>
+                                         <p style="margin: 0; margin-top: 5px;">
+                                           <b>Model price:</b> ${trade['model_price']:.2f} vs <b>Market price:</b> ${trade['market_price']:.2f} 
+                                           (<b>Diff:</b> {trade['price_diff_pct']:+.1f}%)
+                                         </p>
+                                         <p style="margin: 0; margin-top: 5px;">
+                                           <b>Final stock price:</b> ${trade['actual_price_at_expiry']:.2f}
+                                           (<b>Status:</b> {trade['itm_status']})
+                                         </p>
+                                         <p style="margin: 0; margin-top: 5px; font-style: italic;">
+                                           {trade['explanation']}
+                                         </p>
+                                       </div>
+                                       """, unsafe_allow_html=True)
+                           
+                           # Short (Sell) Trades Section
+                           st.markdown("<h6>Shorts (Sell - Model < Market)</h6>", unsafe_allow_html=True)
+                           cols_s = st.columns(3)
+                           cols_s[0].metric("Trades", f"{sim_results['short_trades']:,}")
+                           cols_s[1].metric("P&L ($)", f"{short_profit_val:,.2f}" if np.isfinite(short_profit_val) else "N/A")
+                           cols_s[2].metric("Win Rate", f"{short_win_rate_val:.1%}" if np.isfinite(short_win_rate_val) else "N/A")
+                           
+                           # Add expandable trade details for short trades
+                           if 'short_trade_details' in sim_results and sim_results['short_trade_details'] and pnl_calculated:
+                               # Add a table view option
+                               st.markdown("#### Trade Summary Table")
+                               short_df = pl.DataFrame([
+                                       {
+                                       "Strike": f"${trade['strike']:.2f}", 
+                                       "Days": trade['days'],
+                                       "Entry": f"${trade['entry_price']:.2f}",
+                                       "Final Stock": f"${trade['actual_price_at_expiry']:.2f}",
+                                       "Status": trade['itm_status'],
+                                       "P&L": f"${trade['profit']:+.2f}",
+                                       "Result": trade['win_loss']
+                                       } 
+                                   for trade in sim_results['short_trade_details']
+                               ])
+                               st.dataframe(short_df, use_container_width=True)
+
+                               with st.expander(f"View All {len(sim_results['short_trade_details'])} Short Trades", expanded=False):
+                                   st.markdown("**Short Trades Details** (sorted by profit, most profitable first)")
+                                   for i, trade in enumerate(sim_results['short_trade_details']):
+                                       profit_color = "green" if trade["profit"] > 0 else "red"
+                                       st.markdown(f"""
+                                       <div style="margin-bottom: 10px; padding: 10px; border: 1px solid {'green' if trade['profit'] > 0 else 'red'}; border-radius: 5px;">
+                                         <p style="margin: 0; font-weight: bold;">
+                                           Trade #{i+1}: {trade['win_loss']} (${trade['profit']:.2f} <span style="color:{profit_color}">{'▲' if trade['profit'] > 0 else '▼'}</span>)
+                                         </p>
+                                         <p style="margin: 0; margin-top: 5px;">
+                                           <b>Sell {option_type} @ ${trade['entry_price']:.2f}</b>
+                                           Strike: ${trade['strike']:.2f}, Expiry: {trade['days']} days
+                                         </p>
+                                         <p style="margin: 0; margin-top: 5px;">
+                                           <b>Model price:</b> ${trade['model_price']:.2f} vs <b>Market price:</b> ${trade['market_price']:.2f} 
+                                           (<b>Diff:</b> {trade['price_diff_pct']:+.1f}%)
+                                         </p>
+                                         <p style="margin: 0; margin-top: 5px;">
+                                           <b>Final stock price:</b> ${trade['actual_price_at_expiry']:.2f}
+                                           (<b>Status:</b> {trade['itm_status']})
+                                         </p>
+                                         <p style="margin: 0; margin-top: 5px; font-style: italic;">
+                                           {trade['explanation']}
+                                         </p>
+                                       </div>
+                                       """, unsafe_allow_html=True)
+                           
                            sk, sb = sim_results.get("skipped_strike_range",0), sim_results.get("skipped_no_boundary",0)
                            if sk > 0: st.caption(f"ℹ️ {sk:,} pts ignored by K range filter.")
                            if sb > 0: st.caption(f"ℹ️ P&L/Outcome unknown for {sb:,} trades (boundary data issue).") # Indicate P&L uncertainty
@@ -751,5 +971,5 @@ def display_price_view(loaded_data: Dict[str, Any], params: Dict[str, Any]):
 
     # --- Error Handling for Display ---
     except Exception as e:
-        st.error(f"An critical error occurred during the price view display: {e}")
+        st.error(f"A critical error occurred during the price view display: {e}")
         logger.error(f"Price View Display Error: {e}", exc_info=True)
