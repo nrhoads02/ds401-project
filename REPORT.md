@@ -1,4 +1,4 @@
-# DS 4010 Project Report: Volatility Surface Modeling
+# Volatility and Price Surface Modeling and Visualization
 
 **Team:** DERN (Ryan Freidhoff, Nic Rhoads, Dakota Rossi, Emiliano Saucedo)
 
@@ -8,7 +8,7 @@
 
 ## Table of Contents
 
-- [DS 4010 Project Report: Volatility Surface Modeling](#ds-4010-project-report-volatility-surface-modeling)
+- [Volatility and Price Surface Modeling and Visualization](#volatility-and-price-surface-modeling-and-visualization)
   - [Table of Contents](#table-of-contents)
   - [1. Application Goal](#1-application-goal)
     - [1.1. Project Objective](#11-project-objective)
