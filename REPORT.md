@@ -68,10 +68,10 @@ To fully appreciate the project, a few foundational concepts are essential, espe
   - **Our Project's RV Calculation:** We calculate a daily measure of realized variance using a method that accounts for intraday price ranges and overnight price jumps, often referred to as a "Parkinson-plus-jumps" approach. The daily realized variance is composed of three main parts:
     1. **Intraday Parkinson Component:** Captures volatility during trading hours, based on the high and low prices of the day. Calculated as: $\frac{1}{4 \ln 2} \left(\ln\left(\frac{\text{High}}{\text{Low}}\right)\right)^2$.
     2. **Open-to-Close Jump Component:** Measures the volatility from the market open to market close. Calculated as: $\left(\ln\left(\frac{\text{Close}}{\text{Open}}\right)\right)^2$.
-    3. **Overnight Jump Component:** Accounts for price changes between the previous day's close and the current day's open. Calculated as: $\left(\ln\left(\frac{\text{Open}}{\text{Close}_{\text{prev}}}\right)\right)^2$.
-The sum of these three components gives our `parkinson_plus_jumps_daily` variance.
-*(Refer to [`src/data_transformation/technical_indicators.py`](src/data_transformation/technical_indicators.py) and [`src/data_transformation/INDICATORS.md`](src/data_transformation/INDICATORS.md) for precise formulas and implementation details of these components).*
-This daily variance is then summed over a future prediction horizon of $h$ trading days to obtain `rv_hd_future`. The annualized Realized Volatility ($\sigma$) that our model predicts is then derived from this future variance: $\sigma = \sqrt{rv\_hd\_future / (h/252.0)}$, assuming 252 trading days in a year.
+    3. **Overnight Jump Component:** Accounts for price changes between the previous day's close and the current day's open. Calculated as: $\left(\ln\left(\frac{\text{Open}}{\text{Close}_{\text{prev}}}\right)\right)^2$.  
+  The sum of these three components gives our `parkinson_plus_jumps_daily` variance.
+  *(Refer to [`src/data_transformation/technical_indicators.py`](src/data_transformation/technical_indicators.py) and [`src/data_transformation/INDICATORS.md`](src/data_transformation/INDICATORS.md) for precise formulas and implementation details of these components).*
+  This daily variance is then summed over a future prediction horizon of $h$ trading days to obtain `rv_hd_future`. The annualized Realized Volatility ($\sigma$) that our model predicts is then derived from this future variance: $\sigma = \sqrt{rv\_hd\_future / (h/252.0)}$, assuming 252 trading days in a year.
 
 - **Implied Volatility (IV):** This is the market's *expectation* of future volatility over the life of an option. It is not directly observed but is "implied" by the current market prices of options. If options are expensive, it implies the market expects high volatility, and vice-versa. Our dashboard compares our model's RV predictions against this market-derived IV.
 
