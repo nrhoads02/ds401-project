@@ -210,9 +210,21 @@ The dashboard is organized into multiple views, selectable via a sidebar radio b
 
 The **Volatility Surface View**, with its logic primarily contained in [`dashboard/surface_view.py`](dashboard/surface_view.py), is dedicated to the visualization and comparison of different volatility surfaces. Users can choose to display the LightGBM model's predicted Realized Volatility (RV), the market's Implied Volatility (IV) surface (derived from options chain data), or a direct comparison of these two. This view prominently features interactive 3D Plotly surfaces. It also provides options to overlay contextual data, such as 3D scatter plots of actual realized volatility points (if available for the selected future period) and 3D lines representing the historical RV at the current spot price. When in comparison mode, this view additionally presents a 2D Plotly heatmap showing the percentage difference between the IV and the model's RV, alongside summary tables and metrics comparing the average differences between these surfaces and the observed realized points.
 
+![Volatility Surface View – IV vs LGBM RV](report_surface_comparison.png)
+*Figure 1: Volatility Surface View comparing LGBM-predicted Realized Volatility (RV) to Market Implied Volatility (IV). This 3D plot highlights differences in volatility expectations across strikes and maturities.*
+
 The **Execution Price View**, managed by the code in [`dashboard/price_view.py`](dashboard/price_view.py), takes the volatility surfaces from the previous view and translates them into theoretical option prices using the Black-Scholes-Merton (BSM) model. This view displays a series of interactive 2D Plotly heatmaps. These include visualizations of the LGBM model-implied theoretical option price, the market-implied theoretical option price (derived from market IV), and the dollar difference between these two prices. A key feature of this view is a simple trading strategy simulation, which operates based on identified discrepancies between the model and market prices. The outcomes of these simulated trades (e.g., buy/sell actions, profit/loss) are also visualized on a heatmap. An important overlay available in this section is a line indicating the actual In-The-Money (ITM) / Out-of-The-Money (OTM) boundary, which is derived from the stock's actual price movement over the option's life. Users can adjust BSM model parameters and the settings for the trading simulation here. Furthermore, this view presents summary metrics and tables detailing the results of the trading strategy simulation, such as total Profit & Loss (P&L) and Win Rates.
 
+![Execution Price Analysis Heatmaps](report_pricing_comparison.png)
+*Figure 2: Execution Price View showing heatmaps of theoretical option prices derived from model-predicted and market-implied volatility.*
+
+![Trading Strategy Simulation Heatmap](report_trading_simulation.png)
+*Figure 3: Simulated trading decisions and resulting P&L, based on differences between model-predicted and market-implied prices.*
+
 Finally, an **About Tab**, integrated within the main [`streamlit_app.py`](streamlit_app.py) script, provides textual context and definitions for key financial terms and explains the dashboard's various functionalities. This section aims to help users, especially those less familiar with financial markets or volatility modeling, to better understand the analyses presented.
+
+![Dashboard About Tab](report_about_section.png)
+*Figure 4: 'About' tab of the dashboard provides a concise reference for volatility concepts, model interpretation, and surface definitions.
 
 This multi-view layout, combined with dynamic updating of all outputs based on user inputs, allows users to focus on either direct volatility analysis or its implications for option pricing and trading strategies, facilitating an exploratory and educational experience.
 
@@ -238,6 +250,9 @@ In the **Execution Price View**, users can tailor the option pricing and simulat
 - Numerical inputs are provided for key **BSM Parameters**, namely the Risk-Free Interest Rate and the stock's Dividend Yield.
 - "Display Options" in this view consist of checkboxes to toggle the visibility of various heatmaps: "Show LGBM Expected Price Heatmap," "Show Market Implied Price Heatmap," "Show Price Difference Heatmap," and "Show Executed Trade Heatmap." An overlay for the "Show Actual ITM/OTM Overlay" can also be activated.
 - For the trading strategy analysis, users can choose to "Show Trading Strategy Simulation Stats." The simulation itself is controlled by sliders for the **Mispricing Threshold (%)**, which sets the sensitivity for triggering hypothetical trades, and the **Strike Range Padding (%) around S0**, defining the range of strike prices relative to the spot price where trades are considered.
+
+![Detailed Trade Outcomes](report_trading_simulation_trades.png)
+*Figure 5: Detailed breakdown of individual trades from the pricing simulation, including entry price, model/market delta, and final P&L.*
 
 These extensive input options allow users to dynamically explore different scenarios, stocks, and timeframes, making the dashboard a flexible tool for learning and analysis.
 
