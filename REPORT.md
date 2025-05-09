@@ -6,8 +6,6 @@
 
 **Repository Link:** [GitHub Repository](https://github.com/nrhoads02/ds401-project)
 
-**Intended Audience:** New students in DS 4010
-
 ## Table of Contents
 
 - [DS 4010 Project Report: Volatility Surface Modeling](#ds-4010-project-report-volatility-surface-modeling)
