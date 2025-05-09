@@ -72,7 +72,7 @@ To fully appreciate the project, a few foundational concepts are essential, espe
 
     - The sum of these three components gives our `parkinson_plus_jumps_daily` variance.
     *(Refer to [`src/data_transformation/technical_indicators.py`](src/data_transformation/technical_indicators.py) and [`src/data_transformation/INDICATORS.md`](src/data_transformation/INDICATORS.md) for precise formulas and implementation details of these components).*
-    This daily variance is then summed over a future prediction horizon of $h$ trading days to obtain `rv_hd_future`. The annualized Realized Volatility ($\sigma$) that our model predicts is then derived from this future variance: $\sigma = \sqrt{rv\_hd\_future / (h/252.0)}$, assuming 252 trading days in a year.
+    This daily variance is then summed over a future prediction horizon of $h$ trading days to obtain `rv_hd_future`. The annualized Realized Volatility ($\sigma$) that our model predicts is then derived from this future variance: $\sigma = \sqrt{rv\\_hd\\_future / (h/252.0)}$, assuming 252 trading days in a year.
 
 - **Implied Volatility (IV):** This is the market's *expectation* of future volatility over the life of an option. It is not directly observed but is "implied" by the current market prices of options. If options are expensive, it implies the market expects high volatility, and vice-versa. Our dashboard compares our model's RV predictions against this market-derived IV.
 
