@@ -224,7 +224,7 @@ The **Execution Price View**, managed by the code in [`dashboard/price_view.py`]
 Finally, an **About Tab**, integrated within the main [`streamlit_app.py`](streamlit_app.py) script, provides textual context and definitions for key financial terms and explains the dashboard's various functionalities. This section aims to help users, especially those less familiar with financial markets or volatility modeling, to better understand the analyses presented.
 
 ![Dashboard About Tab](docs/report_about_section.png)
-*Figure 4: 'About' tab of the dashboard provides a concise reference for volatility concepts, model interpretation, and surface definitions.
+*Figure 4: 'About' tab of the dashboard provides a concise reference for volatility concepts, model interpretation, and surface definitions.*
 
 This multi-view layout, combined with dynamic updating of all outputs based on user inputs, allows users to focus on either direct volatility analysis or its implications for option pricing and trading strategies, facilitating an exploratory and educational experience.
 
