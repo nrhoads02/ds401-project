@@ -16,7 +16,7 @@ Our interactive Streamlit dashboard demonstrating the volatility surface modelin
 
 The dashboard can be ran locally from the root of the project repo: `streamlit run dashboard/streamlit_app.py`.
 
-**For detailed information on using the dashboard and understanding its visualizations, please see the [Dashboard README](DASHBOARD_README.md).**
+**For detailed information on using the dashboard and understanding its visualizations, please see the [Dashboard README](dashboard/README.md).**
 
 ## Repository Structure
 
