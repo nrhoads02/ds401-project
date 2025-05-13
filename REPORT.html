@@ -33,10 +33,10 @@ Backend)</a>
 <li><a href="#212-data-acquisition">2.1.2. Data Acquisition</a></li>
 <li><a href="#213-data-cleaning-and-preprocessing">2.1.3. Data Cleaning
 and Preprocessing</a></li>
-<li><a href="#214-data-transformation">2.1.4. Data
-Transformation</a></li>
-<li><a href="#215-data-storage-for-dashboard">2.1.5. Data Storage for
+<li><a href="#214-data-storage-for-dashboard">2.1.4. Data Storage for
 Dashboard</a></li>
+<li><a href="#215-data-transformation">2.1.5. Data
+Transformation</a></li>
 </ul></li>
 <li><a href="#22-modeling">2.2. Modeling</a>
 <ul>
@@ -72,7 +72,8 @@ Goals</a></li>
 <li><a href="#42-next-steps">4.2. Next Steps</a></li>
 <li><a href="#43-unique-aspects">4.3. Unique Aspects</a></li>
 <li><a href="#44-limitations">4.4. Limitations</a></li>
-<li><a href="#45-availability">4.5. Availability</a></li>
+<li><a href="#45-conclusion">4.5. Conclusion</a></li>
+<li><a href="#46-availability">4.6. Availability</a></li>
 </ul></li>
 </ul></li>
 </ul>
@@ -231,7 +232,7 @@ for both modeling and efficient dashboard operation.</p>
 <p>The Extract, Transform, Load (ETL) process formed the foundation of
 our project, involving several stages to prepare the data for analysis
 and modeling. This systematic approach ensured that raw data from
-various origins was consistently processed into a usable format.</p>
+various sources was consistently processed into a usable format.</p>
 <h4 id="data-sources">2.1.1. Data Sources</h4>
 <p>Our project utilized several data streams to gather a comprehensive
 financial dataset. Initially, our primary stock and options data were
@@ -240,13 +241,12 @@ functions similarly to GitHub but is specifically optimized for
 versioning large datasets, which was advantageous for handling extensive
 financial records. The <code>stocks</code> database provided daily Open,
 High, Low, Close, and Volume (OHLCV) data, along with stock split and
-dividend information for over 2000 equities, with some records
-potentially dating back to 2011 (see <a
-href="data/raw/stocks"><code>data/raw/stocks</code></a> for structure
-details). Concurrently, the <code>options</code> database contained
-option chain data, including quotes and associated risk parameters
-(Greeks like delta), as well as historical volatility metrics, generally
-reported weekly since 2019 (see <a
+dividend information for over 13,000 equities, with records dating back
+to 2011 (see <a href="data/raw/stocks"><code>data/raw/stocks</code></a>
+for structure details). Additionally, the <code>options</code> database
+contained option chain data, including quotes and associated risk
+parameters (Greeks like delta), as well as historical volatility
+metrics, generally reported weekly since 2019 (see <a
 href="data/raw/options"><code>data/raw/options</code></a>).</p>
 <p>As an auxiliary source, we incorporated <strong>CBOE Index
 Data</strong> by downloading historical data for various Chicago Board
@@ -283,27 +283,64 @@ application.</p>
 <h4 id="data-cleaning-and-preprocessing">2.1.3. Data Cleaning and
 Preprocessing</h4>
 <p>Before the raw data could be effectively used for feature engineering
-and subsequent modeling, a couple of crucial cleaning and preprocessing
-steps were necessary.</p>
-<p>A primary concern was the integrity of the stock split data. The raw
-data contained some duplicate entries for the same split event, which
-could lead to inconsistencies in price and volume adjustments. To
-address this, we implemented logic to identify such duplicates and
-retain only the most recent, presumably most accurate, record for each
-unique split event. This process is detailed within our script <a
-href="src/data_transformation/stock_adjustments.py"><code>src/data_transformation/stock_adjustments.py</code></a>.</p>
-<p>Another important consideration was the completeness of ticker
-histories. We observed that some stocks had incomplete price and volume
-data within our defined analytical timeframe; for instance, some might
-have been delisted before the end date, listed after the start date, or
-had intermittent missing OHLCV values. To ensure data consistency for
+and subsequent modeling, a couple of cleaning and preprocessing steps
+were necessary.</p>
+<p>One important consideration was the completeness of ticker histories.
+We observed that some stocks had incomplete price and volume data within
+our defined analytical timeframe; for instance, some might have been
+delisted before the end date, listed after the start date, or had
+intermittent missing OHLCV values. To ensure data consistency for
 reliable time-series analysis, we applied a filter to include only those
 tickers that were actively trading and had complete OHLCV records on
 both the first and last dates of our dataset, with no missing values in
 between. This logic, also found in the <code>stock_adjustments.py</code>
 script, while vital for ensuring data quality, consequently reduced the
-total number of available stocks for the final analysis.</p>
-<h4 id="data-transformation">2.1.4. Data Transformation</h4>
+total number of available stocks for the final analysis. This processing
+step removed over 10,000 stocks from our data, but ensures that each
+remaining stock contains clean historical data which is essential for
+strong modeling.</p>
+<p>Another primary concern was the integrity of the stock split data.
+The raw data contained some duplicate entries for the same split event,
+which could lead to inconsistencies in price and volume adjustments. To
+address this, we implemented logic to identify such duplicates and
+retain only the most recent, presumably most accurate, record for each
+unique split event. This process is detailed within our script <a
+href="src/data_transformation/stock_adjustments.py"><code>src/data_transformation/stock_adjustments.py</code></a>.</p>
+<h4 id="data-storage-for-dashboard">2.1.4. Data Storage for
+Dashboard</h4>
+<p>Handling our large datasets for the interactive dashboard presented a
+significant technical challenge. Our raw datasets were several gigabytes
+in size, and storing these as monolithic CSV files directly within our
+GitHub repository was impractical due to GitHub’s file size limitations.
+Furthermore, attempting to access them directly from DoltHub within the
+Streamlit Cloud environment, which has its own resource constraints
+(especially on memory and processing time), proved to be too slow and
+unreliable for maintaining a responsive user experience.</p>
+<p>Our adopted solution was to convert the essential datasets—OHLCV,
+options data, and stock split records—into the Apache Parquet format.
+This conversion was managed by our script <a
+href="src/data_extraction/parquet_converter.py"><code>src/data_extraction/parquet_converter.py</code></a>.
+The Parquet format offers two key advantages: efficient columnar storage
+and effective compression, both of which significantly reduced the
+overall file footprint. More importantly, we implemented a partitioning
+strategy for these Parquet files. The data was divided based on the
+stock symbol (<code>act_symbol</code>), resulting in a fixed number of
+smaller, more manageable partition files for each distinct dataset.</p>
+<p>To facilitate efficient data loading from these partitioned files, we
+generated metadata files (in <code>partition_metadata.json</code> format
+for each dataset type) that map each stock symbol to its corresponding
+partition file(s). Our custom data loader, detailed in <a
+href="src/data_extraction/dataframe_loader.py"><code>src/data_extraction/dataframe_loader.py</code></a>,
+utilizes this metadata. When a user selects a particular stock in the
+dashboard, the loader intelligently reads <em>only</em> the necessary
+partition files that contain that specific stock’s data, rather than
+attempting to load the entire multi-gigabyte dataset into memory. This
+selective loading approach drastically reduced memory usage and data
+load times within the Streamlit application. Consequently, this allowed
+us to store the processed data within GitHub’s repository limits (as
+individual partition files were smaller) and, crucially, to maintain
+fast and responsive dashboard performance for the end-user.</p>
+<h4 id="data-transformation">2.1.5. Data Transformation</h4>
 <p>The core of our data preparation lay in transforming the cleaned
 OHLCV data by enriching it with a variety of features deemed relevant
 for volatility modeling. This multi-faceted process was orchestrated as
@@ -358,43 +395,11 @@ function</strong>. This function, located in <a
 href="src/data_transformation/transformation_pipeline.py"><code>src/data_transformation/transformation_pipeline.py</code></a>,
 was designed to leverage Polars’ lazy evaluation and streaming
 capabilities. This approach allowed for the efficient processing of our
-large dataframes, minimizing memory consumption while ensuring all
-transformations were applied consistently.</p>
-<h4 id="data-storage-for-dashboard">2.1.5. Data Storage for
-Dashboard</h4>
-<p>Handling our large datasets for the interactive dashboard presented a
-significant technical challenge. Our raw datasets, even before the
-addition numerous technical indicators, were several gigabytes in size.
-Storing these as monolithic CSV files directly within our GitHub
-repository was impractical due to GitHub’s file size limitations.
-Furthermore, attempting to access them directly from DoltHub within the
-Streamlit Cloud environment, which has its own resource constraints
-(especially on memory and processing time), proved to be too slow and
-unreliable for maintaining a responsive user experience.</p>
-<p>Our adopted solution was to convert the essential datasets—OHLCV,
-split-adjusted options data, and stock split records—into the Apache
-Parquet format. This conversion was managed by our script <a
-href="src/data_extraction/parquet_converter.py"><code>src/data_extraction/parquet_converter.py</code></a>.
-The Parquet format offers two key advantages: efficient columnar storage
-and effective compression, both of which significantly reduced the
-overall file footprint. More importantly, we implemented a partitioning
-strategy for these Parquet files. The data was divided based on the
-stock symbol (<code>act_symbol</code>), resulting in a fixed number of
-smaller, more manageable partition files for each distinct dataset.</p>
-<p>To facilitate efficient data loading from these partitioned files, we
-generated metadata files (in <code>partition_metadata.json</code> format
-for each dataset type) that map each stock symbol to its corresponding
-partition file(s). Our custom data loader, detailed in <a
-href="src/data_extraction/dataframe_loader.py"><code>src/data_extraction/dataframe_loader.py</code></a>,
-utilizes this metadata. When a user selects a particular stock in the
-dashboard, the loader intelligently reads <em>only</em> the necessary
-partition files that contain that specific stock’s data, rather than
-attempting to load the entire multi-gigabyte dataset into memory. This
-selective loading approach drastically reduced memory usage and data
-load times within the Streamlit application. Consequently, this allowed
-us to store the processed data within GitHub’s repository limits (as
-individual partition files were smaller) and, crucially, to maintain
-fast and responsive dashboard performance for the end-user.</p>
+large dataframes, minimizing our memory consumption during
+transformation. This function also enables us to pass through just one
+<code>act_symbol</code> worth of data while ensuring transformations
+remain consistent, allowing for a more scalable transformation
+pipeline.</p>
 <h3 id="modeling">2.2. Modeling</h3>
 <p>With the data prepared, the next phase focused on developing
 predictive models for future realized volatility.</p>
@@ -432,31 +437,34 @@ forecast, which can then be compared to actual market option prices.</p>
 <p>During the course of our project, we explored several alternative
 modeling approaches before finalizing our choice of LightGBM.
 <strong>GARCH (Generalized Autoregressive Conditional
-Heteroskedasticity) models</strong>, while a standard and well-respected
+Heteroskedasticity) models</strong>, a standard and well-respected
 method for modeling time-series volatility in finance, were considered.
 We had ideas initially to use a GARCH or eGARCH model for our main
-modeling tasks, then considered using GARCH as a parameter in a larger
-machine learning model. However, given the scope of our dashboard, which
-aimed to cover a large number of stocks, and the size of our dataset,
-fitting potentially thousands of individual GARCH models (e.g., one per
-stock, with rolling windows to avoid data leakage) was deemed too
-computationally expensive and time-consuming.</p>
+modeling tasks, which we determined was too simplistic for our ultimate
+goal, then considered using an ARCH-based model as a parameter in a
+larger machine learning model. However, given the scope of our
+dashboard, which aimed to cover a large number of stocks, and the size
+of our dataset, fitting potentially thousands of individual GARCH models
+(e.g., one per stock, with rolling windows to avoid data leakage) was
+deemed too computationally expensive and time-consuming.</p>
 <p>We also initially considered <strong>XGBoost</strong>, another
 powerful and popular gradient boosting framework. While XGBoost is
 highly effective for many machine learning tasks, our early experiments
-and comparisons suggested that LightGBM could offer comparable, if not
-slightly better, performance for our specific problem, often with the
-added benefit of faster training times on large datasets. This led us to
-focus our development efforts on LightGBM.</p>
+and comparisons suggested that LightGBM could offer slightly better
+performance for our specific problem, with the added benefit of faster
+training times on large datasets. This is because of the architecture of
+these models, where XGBoost searches depth-first while LightGBM searches
+breadth-first. This led us to focus our development efforts on
+LightGBM.</p>
 <p><strong>Neural Network approaches</strong>, particularly those
 incorporating Long Short-Term Memory (LSTM) layers, are theoretically
 very well-suited for sequence data like financial time series. We
-investigated this avenue, recognizing their potential to capture complex
-temporal dependencies. However, our experiments revealed that training
-these types of models to a satisfactory level of performance would be
-significantly slower and more resource-intensive than gradient boosting
-methods, making them less practical for the project’s timeframe and the
-desired speed of iteration for model updates or retraining.</p>
+investigated a few of these models, recognizing their potential to
+capture complex temporal dependencies. However, our experiments revealed
+that training these types of models to a satisfactory level of
+performance would be significantly slower and more resource-intensive
+than gradient boosting methods, making them less practical for the
+project’s timeframe and resource constraints.</p>
 <p>Lastly, our initial conceptualization for generating the volatility
 surface involved an <strong>ad-hoc SVI (Stochastic Volatility Inspired)
 approach</strong>. The idea was to model and predict Heston-like
@@ -552,21 +560,22 @@ rounds.</p>
 <p>The <strong>software implementation</strong> was entirely in Python.
 We relied heavily on the <code>lightgbm</code> library for the core
 modeling tasks, <code>polars</code> for its high-performance data
-manipulation capabilities, <code>numpy</code> for numerical operations
-underlying feature creation and model inputs, and <code>joblib</code>
-for efficiently saving and loading model metadata.</p>
-<p>Regarding <strong>model estimation and storage</strong>: All models
-are pre-estimated offline, a necessity given the substantial time
-required for training the full suite of models. The trained LightGBM
-booster objects (the actual model files) are saved to disk. To manage
-file sizes effectively, particularly for storage within GitHub’s typical
-limits, models are compressed using <code>zlib</code> and stored with a
-<code>.lgb.z</code> extension if they exceed a predefined size
+manipulation capabilities, and <code>numpy</code> for numerical
+operations underlying feature creation and model inputs.</p>
+<p>Regarding <strong>model estimation and storage</strong>: The trained
+LightGBM booster objects (the actual model files) are saved to disk. To
+manage file sizes effectively, particularly for storage within GitHub’s
+typical limits, models are compressed using <code>zlib</code> and stored
+with a <code>.lgb.z</code> extension if they exceed a predefined size
 threshold. The current version of the models has all modeling files
-stored in a <code>zlib</code> compressed format. These model files,
-along with their associated metadata (which includes details like the
-feature names used for each horizon and the specific A/B stock splits),
-are organized into dated subdirectories within the <a
+stored in a <code>zlib</code> compressed format. This creates a
+bottleneck on our application layer, where even with parallelized
+loading and decompression of models, the compressed model loading takes
+around 5 seconds per run. However this cannot be avoided given our
+GitHub file size constraints. These model files, along with their
+associated metadata (which includes details like the feature names used
+for each horizon and the specific A/B stock splits), are organized into
+dated subdirectories within the <a
 href="data/models/surface_lgbm/"><code>data/models/surface_lgbm/</code></a>
 path in our repository. The dashboard application then dynamically loads
 these required pre-trained models using parallel processing techniques
@@ -597,17 +606,18 @@ backend pipeline and models.</p>
 <h4 id="technology-used">2.3.1. Technology Used</h4>
 <p>The dashboard was built using <strong>Streamlit</strong> as the
 primary web application framework, chosen for its ease of use and strong
-integration with Python, which was the language for all our backend
-processing. The machine learning models were developed using
-<strong>LightGBM</strong>. Data manipulation throughout the project
-relied heavily on the efficiency of <strong>Polars</strong> and the
-numerical capabilities of <strong>NumPy</strong>. Interactive
-visualizations, particularly the 3D surfaces and 2D heatmaps central to
-the dashboard’s purpose, were created using <strong>Plotly</strong>.
-While initial data sourcing involved <strong>Dolt</strong> databases,
-the final application primarily accessed data stored in the
-<strong>Parquet</strong> file format for performance reasons. The entire
-application is hosted on the Streamlit Community Cloud platform.</p>
+integration with Python, GitHub, and Plotly, technologies used
+throughout our project’s existing stack. The machine learning models
+were developed using <strong>LightGBM</strong>. Data manipulation
+throughout the project relied heavily on the efficiency of
+<strong>Polars</strong> and the numerical capabilities of
+<strong>NumPy</strong>. Interactive visualizations, particularly the 3D
+surfaces and 2D heatmaps central to the dashboard’s purpose, were
+created using <strong>Plotly</strong>. While initial data sourcing
+involved <strong>Dolt</strong> databases, the final application
+primarily accessed data stored in the <strong>Parquet</strong> file
+format for performance reasons. The entire application is hosted on the
+Streamlit Community Cloud platform.</p>
 <h4 id="dashboard-layout-logic-and-outputs">2.3.2. Dashboard Layout,
 Logic, and Outputs</h4>
 <p>The dashboard is organized into multiple views, selectable via a
@@ -683,11 +693,10 @@ Interactivity</h4>
 of user inputs to customize the analysis.</p>
 <p>Globally, across all views, users can:</p>
 <ul>
-<li>Select the <strong>Stock Symbol</strong> from a comprehensive
-dropdown list, allowing analysis for a specific company.</li>
+<li>Select the <strong>Stock Symbol</strong> from a dropdown list for
+analysis.</li>
 <li>Specify the <strong>Trade Date</strong> using an intuitive calendar
-input, which sets the reference point for all historical data lookups
-and future predictions.</li>
+input.</li>
 <li>Choose the main analysis mode via a <strong>View Selection</strong>
 radio button, switching between the “Volatility Surface” view and the
 “Execution Price” view.</li>
@@ -740,20 +749,20 @@ flexible tool for learning and analysis.</p>
 <h4 id="technology-assessment">2.3.4. Technology Assessment</h4>
 <p>Our choice of <strong>Streamlit</strong> for the dashboard framework
 and hosting proved highly effective, primarily due to its seamless
-Python integration and the ability it afforded for rapid development and
-iteration. Creating interactive widgets (like sliders, buttons, and
-selectboxes) and managing the page layout using columns, tabs, and
-expanders was generally straightforward and intuitive. However, a key
-lesson learned was that Streamlit’s performance is heavily dependent on
-the efficiency of the underlying Python code, particularly concerning
-data loading and processing. Our initial challenges with handling large
-datasets necessitated significant optimization efforts, most notably the
-transition from direct Dolt/CSV access to a partitioned Parquet data
-backend. The resource limitations of the Streamlit Community Cloud
-environment (e.g., available RAM) also reinforced the critical need for
-this data handling efficiency. On the positive side, deployment of the
-application via GitHub integration was remarkably simple and
-user-friendly.</p>
+Python, GitHub, and Plotly integration and the ability it afforded for
+rapid development and iteration. Creating interactive widgets (like
+sliders, buttons, and selectboxes) and managing the page layout using
+columns, tabs, and expanders was generally straightforward and
+intuitive. However, a key lesson learned was that Streamlit’s
+performance is heavily dependent on the efficiency of the underlying
+Python code, particularly concerning data loading and processing. Our
+initial challenges with handling large datasets necessitated significant
+optimization efforts, most notably the transition from direct Dolt/CSV
+access to a partitioned Parquet data backend. The resource limitations
+of the Streamlit Community Cloud environment (e.g., available RAM) also
+reinforced the critical need for this data handling efficiency. On the
+positive side, deployment of the application via GitHub integration was
+remarkably simple and user-friendly.</p>
 <p>For creating the visualizations, <strong>Plotly</strong> was an
 excellent choice. It enabled the development of highly interactive,
 publication-quality plots, which was especially important for the
@@ -791,24 +800,24 @@ observations), were vital for the model to capture any non-linear
 patterns inherent in volatility structures. However, achieving
 consistently high accuracy across all market conditions and for all
 individual stocks remains a formidable challenge in financial
-forecasting. A key limitation we encountered during the project was the
-inability to evaluate our model’s out-of-sample performance on truly
-forward-looking data due to the historical cutoff date of our primary
-dataset. This restricted our ability to definitively validate the
-model’s robustness and its generalizability to future, unseen market
-conditions, which is a crucial aspect of any predictive modeling
-endeavor.</p>
+forecasting. It’s no surprise that there are entire industries built on
+robust financial forecasting and analysis. A key limitation we
+encountered during the project was the inability to evaluate our model’s
+out-of-sample performance on truly forward-looking data due to the
+historical cutoff date of our primary dataset. This restricted our
+ability to definitively validate the model’s robustness and its
+generalizability to future, unseen market conditions, which is an
+essential aspect of predictive modeling endeavors.</p>
 <p><strong>Data handling</strong> emerged as perhaps the most crucial
 and demanding aspect of the project from an engineering perspective. The
-sheer size of typical financial datasets necessitates substantial and
-careful engineering effort. Our journey involved an evolution of
-strategies: from initial data exploration using Dolt, to leveraging
-efficient data manipulation libraries like Polars for processing, and
-finally, to implementing a partitioned Parquet file strategy
-specifically for the dashboard. This iterative process underscored the
-paramount importance of scalable and efficient data management for both
-the development phase and the successful deployment of a responsive
-application.</p>
+size of our financial datasets required careful and robust engineering
+efforts. Our journey involved an evolution of strategies: from initial
+data exploration using Dolt, to leveraging efficient data manipulation
+libraries like Polars for processing, and finally, to implementing a
+partitioned Parquet file strategy specifically for the dashboard. This
+iterative process underscored the importance of scalable and efficient
+data management for both the development phase and the successful
+deployment of a responsive application.</p>
 <p>Finally, the <strong>Model vs. Market comparison</strong>, which was
 facilitated by the basic trading simulation incorporated into the
 dashboard, was highly instructive. It clearly demonstrated how
@@ -826,10 +835,8 @@ liquidity—not just the perceived difference in volatility forecasts.</p>
 significantly shaped its direction and final outcome. For the core
 <strong>modeling</strong> task, we chose LightGBM primarily for its
 recognized efficiency and strong performance on large, tabular datasets.
-This was prioritized over potentially more computationally expensive
-GARCH models, which would have been difficult to scale across many
-stocks, and also over more complex deep learning architectures, which
-posed challenges in terms of development time and interpretability
+This was prioritized over more complex deep learning architectures,
+which posed challenges in terms of development time and interpretability
 within the project’s scope.</p>
 <p>Regarding <strong>data storage</strong> for the interactive
 dashboard, we adopted a strategy of using partitioned Parquet files
@@ -842,8 +849,8 @@ Streamlit Cloud environment.</p>
 due to its rapid Python-based development cycle and its ease of
 integration with our existing Python codebase. This made it a more
 straightforward and faster choice for our team compared to alternatives
-like Dash (which often requires more front-end development expertise) or
-R Shiny (which would have necessitated R integration).</p>
+like Dash or Shiny which may require more front-end expertise for an app
+of similar scale.</p>
 <p>In defining our <strong>target variable</strong> for the predictive
 models, we opted to model conditional future Realized Volatility,
 denoted as <span
@@ -883,7 +890,7 @@ model-versus-market analysis that we set out to explore in this
 project.</p>
 <h2 id="discussion">4. Discussion</h2>
 <h3 id="project-summary">4.1. Project Summary</h3>
-<p>This project successfully culminated in the development of a
+<p>This project culminated in the successful development of a
 comprehensive data pipeline and an interactive Streamlit dashboard
 designed for exploring stock volatility surfaces. Our process involved
 sourcing and meticulously processing large-scale financial datasets,
@@ -922,9 +929,9 @@ macroeconomic news releases, or quantitative analyses of news articles
 related to specific equities, could provide additional predictive
 signals that are not present in price and volume data alone. Our options
 data was also more limited than our OHLCV data, so having more complete
-options data, potentially including greeks and volatility metrics, and
-utilizing this data during training could enhance our model’s predictive
-accuracy.</p>
+options data, potentially including more dense quotes and more frequent
+data reporting, and utilizing this data during training could enhance
+our model’s predictive accuracy.</p>
 <p>From a <strong>user experience</strong> perspective, the dashboard
 could be further enhanced by adding more interactive elements. For
 instance, allowing users to click on specific points on a volatility
@@ -948,8 +955,8 @@ reliable IV surfaces.</p>
 <h3 id="unique-aspects">4.3. Unique Aspects</h3>
 <p>This project incorporated several unique aspects that distinguish it
 within the scope of a typical academic undertaking. A primary one was
-the significant effort dedicated to <strong>large data
-handling</strong>. Developing and implementing the partitioned Parquet
+the significant effort dedicated to <strong>large-scale data
+management</strong>. Developing and implementing the partitioned Parquet
 strategy was crucial for managing multi-gigabyte datasets within the
 practical constraints of project development timelines and the resource
 limitations of a web deployment environment like Streamlit Cloud. This
@@ -1000,7 +1007,7 @@ model’s Realized Volatility predictions against market IV, as we are
 comparing a direct prediction of future volatility with a
 market-inferred expectation that carries its own assumptions.
 Additionally, both our <strong>Options Market data</strong> and our IV
-data was not as granular or complete as our OHLCV data (e.g. OHLCV
+data were not as granular or complete as our OHLCV data (e.g. OHLCV
 contained daily data since 2011, while Options Market data was less
 frequent and only recorded since 2019), meaning that we could not
 directly use the options market data to train our model.</p>
@@ -1026,7 +1033,15 @@ the actual price at which the trade is executed). These factors would be
 critical in any practical implementation of a trading strategy and would
 likely reduce the profitability observed in our simplified
 simulation.</p>
-<h3 id="availability">4.5. Availability</h3>
+<h3 id="conclusion">4.5. Conclusion</h3>
+<p>This project represents a rigorous application of data science to a
+complex financial problem. By blending machine learning with
+domain-specific modeling, we developed an accessible and interactive
+tool that empowers users to explore volatility surfaces, uncover pricing
+discrepancies, and simulate basic trading strategies. While there are
+many paths for future enhancement, we believe this project demonstrates
+the real-world potential of data science in financial analysis.</p>
+<h3 id="availability">4.6. Availability</h3>
 <ul>
 <li><strong>Code:</strong> The complete source code for the data
 pipeline, modeling, and dashboard can be found in this GitHub
